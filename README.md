@@ -10,6 +10,17 @@ A comprehensive and interactive desktop application designed for efficient acade
 * **Secure Database Integration:** Reliable data storage and retrieval using a relational database.
 
 ## 💻 Tech Stack
+
+👨‍💻 Developer
+Developed by: Adisu Dereje
+
+Portfolio: Adisu-Dev.github.io
+
+LinkedIn: Adisu Dereje
+
+GitHub: @Adisu-Dev
+
+This project was developed as part of an academic presentation to demonstrate practical skills in full-stack desktop application development.
 * **Language:** Java (Object-Oriented Programming)
 * **Framework (GUI):** JavaFX
 * **Database:** MS SQL Server (MSSQL)
