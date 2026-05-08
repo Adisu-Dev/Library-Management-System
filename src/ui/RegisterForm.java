@@ -32,13 +32,18 @@ public class RegisterForm {
     public RegisterForm() {
         view = new StackPane();
 
-        // Background
+        // Background image — same as original
         try {
-            Image bg = new Image("file:src/images/bdu_bg.jpg");
-            view.setBackground(new Background(new BackgroundImage(bg,
-                BackgroundRepeat.NO_REPEAT, BackgroundRepeat.NO_REPEAT,
-                BackgroundPosition.CENTER,
-                new BackgroundSize(BackgroundSize.AUTO, BackgroundSize.AUTO, false, false, false, true))));
+            java.io.InputStream bgStream = getClass().getResourceAsStream("/images/bdu_bg.jpg");
+            if (bgStream != null) {
+                Image bg = new Image(bgStream);
+                view.setBackground(new Background(new BackgroundImage(bg,
+                    BackgroundRepeat.NO_REPEAT, BackgroundRepeat.NO_REPEAT,
+                    BackgroundPosition.CENTER,
+                    new BackgroundSize(BackgroundSize.AUTO, BackgroundSize.AUTO, false, false, false, true))));
+            } else {
+                view.setStyle("-fx-background-color: #020617;");
+            }
         } catch (Exception ignored) {
             view.setStyle("-fx-background-color: #020617;");
         }
@@ -121,8 +126,11 @@ public class RegisterForm {
         linkLogin.setTextFill(Color.web("#38bdf8"));
         linkLogin.setStyle("-fx-border-color: transparent; -fx-underline: true; -fx-font-size: 12px;");
         linkLogin.setOnAction(e -> {
-            if (view.getScene() != null)
-                view.getScene().setRoot(new LoginForm().getView());
+            if (view.getScene() != null) {
+                LandingPage landing = new LandingPage();
+                view.getScene().setRoot(landing.getView());
+                javafx.application.Platform.runLater(landing::showLoginModal);
+            }
         });
         loginBox.getChildren().addAll(lblHave, linkLogin);
 
@@ -198,7 +206,7 @@ public class RegisterForm {
         PasswordField txtConfirm = new PasswordField();
         StackPane confirmPane = passField("Confirm Password", txtConfirm);
 
-        Button btnReg = registerButton("CREATE STUDENT ACCOUNT", "#38bdf8");
+        Button btnReg = registerButton("CREATE STUDENT ACCOUNT", "#3b82f6");
         btnReg.setOnAction(e -> {
             String name    = txtName.getText().trim();
             String id      = txtId.getText().trim().toUpperCase();
@@ -214,6 +222,8 @@ public class RegisterForm {
                 alert(Alert.AlertType.ERROR, "Missing Fields", "Please fill in all required fields.");
                 return;
             }
+            String nameErr = validateName(name);
+            if (nameErr != null) { alert(Alert.AlertType.ERROR, "Invalid Name", nameErr); return; }
             if (!id.matches("^BDU\\d{4,10}$")) {
                 alert(Alert.AlertType.ERROR, "Invalid BDU ID",
                     "Student ID must start with 'BDU' followed by 4–10 digits.\nExample: BDU1234567");
@@ -307,7 +317,7 @@ public class RegisterForm {
             accessRow("❌", "Reserve books  (students only)")
         );
 
-        Button btnReg = registerButton("CREATE GUEST ACCOUNT", "#818cf8");
+        Button btnReg = registerButton("CREATE GUEST ACCOUNT", "#3b82f6");
         btnReg.setOnAction(e -> {
             String name    = txtName.getText().trim();
             String email   = txtEmail.getText().trim();
@@ -321,6 +331,8 @@ public class RegisterForm {
                     "Full Name, Email, Purpose, and Password are required.");
                 return;
             }
+            String nameErr = validateName(name);
+            if (nameErr != null) { alert(Alert.AlertType.ERROR, "Invalid Name", nameErr); return; }
             if (!email.contains("@") || !email.contains(".")) {
                 alert(Alert.AlertType.ERROR, "Invalid Email", "Please enter a valid email address.");
                 return;
@@ -359,7 +371,7 @@ public class RegisterForm {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // Shared DB insert
+    // Shared DB insert — always sets IsBlocked=0 so new users are active
     // ═══════════════════════════════════════════════════════════════
     private void insertUser(String name, String username, String pass,
                             String role, String phone, String email,
@@ -378,22 +390,38 @@ public class RegisterForm {
                     return;
                 }
             }
-            // Insert
-            boolean hasEmail = columnExists(conn, "Users", "Email");
-            String sql = hasEmail
-                ? "INSERT INTO Users (FullName,Username,PasswordHash,Role,Phone,Email) VALUES(?,?,?,?,?,?)"
-                : "INSERT INTO Users (FullName,Username,PasswordHash,Role,Phone) VALUES(?,?,?,?,?)";
-            try (PreparedStatement ins = conn.prepareStatement(sql)) {
+
+            // Detect optional columns
+            boolean hasEmail     = columnExists(conn, "Users", "Email");
+            boolean hasIsBlocked = columnExists(conn, "Users", "IsBlocked");
+
+            // Build INSERT — always include IsBlocked=0 so the account is active immediately
+            StringBuilder sql = new StringBuilder(
+                "INSERT INTO Users (FullName,Username,PasswordHash,Role,Phone");
+            if (hasEmail)     sql.append(",Email");
+            if (hasIsBlocked) sql.append(",IsBlocked");
+            sql.append(") VALUES (?,?,?,?,?");
+            if (hasEmail)     sql.append(",?");
+            if (hasIsBlocked) sql.append(",0");   // 0 = not blocked
+            sql.append(")");
+
+            try (PreparedStatement ins = conn.prepareStatement(sql.toString())) {
                 ins.setString(1, name);
                 ins.setString(2, username);
-                ins.setString(3, db.PasswordUtil.hashPassword(pass)); // ← Hash before storing
+                ins.setString(3, db.PasswordUtil.hashPassword(pass));
                 ins.setString(4, role);
                 ins.setString(5, phone);
                 if (hasEmail) ins.setString(6, email);
+
                 if (ins.executeUpdate() > 0) {
                     alert(Alert.AlertType.INFORMATION, successTitle, successMsg);
-                    if (view.getScene() != null)
-                        view.getScene().setRoot(new LoginForm().getView());
+                    // Navigate back to the full LandingPage with login modal on top
+                    if (view.getScene() != null) {
+                        LandingPage landing = new LandingPage();
+                        view.getScene().setRoot(landing.getView());
+                        // Small delay so the scene is attached before showing the modal
+                        javafx.application.Platform.runLater(landing::showLoginModal);
+                    }
                 }
             }
         } catch (SQLException ex) {
@@ -425,7 +453,7 @@ public class RegisterForm {
 
     private void applyTypeStyle(Button b, boolean active) {
         b.setStyle(active
-            ? "-fx-background-color: #38bdf8; -fx-text-fill: #020617;" +
+            ? "-fx-background-color: #3b82f6; -fx-text-fill: white;" +
               "-fx-background-radius: 10; -fx-cursor: hand; -fx-font-weight: bold;"
             : "-fx-background-color: transparent; -fx-text-fill: #64748b;" +
               "-fx-background-radius: 10; -fx-cursor: hand;");
@@ -439,9 +467,9 @@ public class RegisterForm {
     private Label sectionLbl(String text) {
         Label l = new Label(text);
         l.setFont(Font.font("Segoe UI", FontWeight.BOLD, 11));
-        l.setTextFill(Color.web("#38bdf8"));
+        l.setTextFill(Color.web("#3b82f6"));
         l.setMaxWidth(Double.MAX_VALUE);
-        l.setStyle("-fx-border-color: rgba(56,189,248,0.22); -fx-border-width: 0 0 1 0; -fx-padding: 5 0 3 0;");
+        l.setStyle("-fx-border-color: rgba(59,130,246,0.25); -fx-border-width: 0 0 1 0; -fx-padding: 5 0 3 0;");
         return l;
     }
 
@@ -554,6 +582,16 @@ public class RegisterForm {
         try (ResultSet rs = conn.getMetaData().getColumns(null, null, table, col)) {
             return rs.next();
         } catch (SQLException e) { return false; }
+    }
+
+    /** Validates a full name: letters + spaces only, 2–30 chars, no digits. */
+    private String validateName(String name) {
+        if (name == null || name.trim().isEmpty()) return "Name is required.";
+        String n = name.trim();
+        if (n.length() < 2)  return "Name must be at least 2 characters.";
+        if (n.length() > 30) return "Name must be at most 30 characters.";
+        if (!n.matches("[\\p{L} .'-]+")) return "Name must contain letters only — no numbers or special characters.";
+        return null; // valid
     }
 
     private void alert(Alert.AlertType type, String title, String msg) {

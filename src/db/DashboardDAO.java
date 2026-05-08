@@ -26,8 +26,8 @@ public class DashboardDAO {
             conn = DatabaseConnection.getConnection();
 
             if (conn != null) {
-                // 1. Total Catalog (የመጽሐፍት ብዛት)
-                String query1 = "SELECT COUNT(*) AS Total FROM Books";
+                // 1. Total Catalog — sum of all physical copies across all titles
+                String query1 = "SELECT SUM(Quantity) AS Total FROM Books";
                 try (PreparedStatement stmt = conn.prepareStatement(query1);
                      ResultSet rs = stmt.executeQuery()) {
                     if (rs.next()) metrics[0] = rs.getInt(1);

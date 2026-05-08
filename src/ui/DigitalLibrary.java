@@ -53,9 +53,9 @@ public class DigitalLibrary {
         HBox statPills = new HBox(10);
         statPills.setAlignment(Pos.CENTER);
         statPills.getChildren().addAll(
-            createStatPill("📘", "12,450 E-Books",   "#3498db"),
-            createStatPill("🌟", "124 New Arrivals",  "#2ecc71"),
-            createStatPill("⬇️", "8,942 Downloads",   "#9b59b6")
+            createStatPill("📘", "12,450 E-Books",   "#3b82f6"),
+            createStatPill("🌟", "124 New Arrivals",  "#3b82f6"),
+            createStatPill("⬇️", "8,942 Downloads",   "#3b82f6")
         );
 
         Region hSpacer = new Region(); HBox.setHgrow(hSpacer, Priority.ALWAYS);
@@ -110,8 +110,8 @@ public class DigitalLibrary {
 
         Label lblRows = new Label("Rows:");
         lblRows.setFont(Font.font("Segoe UI", 12));
-        cmbPageSize = new ComboBox<>(FXCollections.observableArrayList(10, 20, 50));
-        cmbPageSize.setValue(10);
+        cmbPageSize = new ComboBox<>(FXCollections.observableArrayList(5, 10, 20, 50));
+        cmbPageSize.setValue(5);
         cmbPageSize.setPrefHeight(32);
         cmbPageSize.setStyle("-fx-background-color: white; -fx-border-color: #bdc3c7; -fx-border-radius: 5;");
         cmbPageSize.setOnAction(e -> updatePagination());
@@ -128,6 +128,34 @@ public class DigitalLibrary {
         pagination.setMinHeight(36);
         pagination.setPageFactory(this::createPage);
 
+        // ── Refresh button + auto-refresh label ───────────────────────
+        Button btnRefresh = new Button("🔄 Refresh");
+        btnRefresh.setStyle(
+            "-fx-background-color: #3b82f6; -fx-text-fill: white;" +
+            "-fx-font-weight: bold; -fx-background-radius: 8; -fx-cursor: hand; -fx-padding: 5 14;"
+        );
+        btnRefresh.setOnAction(e -> refreshData());
+
+        Label lblAutoRefresh = new Label("● Auto-refresh: 30s");
+        lblAutoRefresh.setFont(Font.font("Segoe UI", 11));
+        lblAutoRefresh.setTextFill(Color.web("#3b82f6"));
+
+        HBox refreshBar = new HBox(10, btnRefresh, lblAutoRefresh);
+        refreshBar.setAlignment(Pos.CENTER_LEFT);
+        refreshBar.setPadding(new Insets(6, 20, 4, 20));
+        refreshBar.setStyle("-fx-background-color: #f0fdf4; -fx-border-color: #bbf7d0; -fx-border-width: 0 0 1 0;");
+
+        // Auto-refresh every 30 seconds
+        javafx.animation.Timeline autoRefresh = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(30), ev -> refreshData())
+        );
+        autoRefresh.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        autoRefresh.play();
+        // Stop auto-refresh when the node is removed from scene
+        refreshBar.sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene == null) autoRefresh.stop();
+        });
+
         // BorderPane: table grows in center, pagination fixed at bottom
         BorderPane tableSection = new BorderPane();
         tableSection.setCenter(eBookTable);
@@ -141,7 +169,7 @@ public class DigitalLibrary {
         btnReligion.setOnAction(e   -> { updateChipStyles(btnReligion);   filterByCategory("Religion");   });
         btnPsychology.setOnAction(e -> { updateChipStyles(btnPsychology); filterByCategory("Psychology"); });
 
-        root.getChildren().addAll(headerPanel, toolbar, tableSection);
+        root.getChildren().addAll(headerPanel, toolbar, refreshBar, tableSection);
         VBox.setVgrow(root, Priority.ALWAYS);
 
         masterData  = FXCollections.observableArrayList();
@@ -172,38 +200,49 @@ public class DigitalLibrary {
     // ==========================================
 
     private VBox createPage(int pageIndex) {
-        int pageSize = cmbPageSize.getValue();
+        int pageSize  = cmbPageSize.getValue();
         int fromIndex = pageIndex * pageSize;
-        int toIndex = Math.min(fromIndex + pageSize, filteredData.size());
+        int toIndex   = Math.min(fromIndex + pageSize, filteredData.size());
 
-        if (fromIndex < filteredData.size()) {
-            eBookTable.setItems(FXCollections.observableArrayList(filteredData.subList(fromIndex, toIndex)));
-        } else {
-            eBookTable.setItems(FXCollections.emptyObservableList());
-        }
-        // Return empty VBox — table is managed by BorderPane, not by pagination
+        ObservableList<EBook> pageItems = fromIndex < filteredData.size()
+            ? FXCollections.observableArrayList(filteredData.subList(fromIndex, toIndex))
+            : FXCollections.emptyObservableList();
+
+        eBookTable.setItems(pageItems);
+        // Force all cells to re-render so Read/Download buttons always appear
+        javafx.application.Platform.runLater(() -> eBookTable.refresh());
         return new VBox();
     }
 
     private void updatePagination() {
         filteredData.setPredicate(book -> {
-            boolean matchesCategory = currentCategory.equals("All Books") || book.getTopic().equalsIgnoreCase(currentCategory);
+            boolean matchesCategory = currentCategory.equals("All Books")
+                || book.getTopic().equalsIgnoreCase(currentCategory);
             String searchText = txtSearch.getText();
-            boolean matchesSearch = searchText == null || searchText.isEmpty() ||
-                    book.getTitle().toLowerCase().contains(searchText.toLowerCase()) ||
-                    book.getAuthor().toLowerCase().contains(searchText.toLowerCase()) ||
-                    book.getTopic().toLowerCase().contains(searchText.toLowerCase());
-
+            boolean matchesSearch = searchText == null || searchText.isEmpty()
+                || book.getTitle().toLowerCase().contains(searchText.toLowerCase())
+                || book.getAuthor().toLowerCase().contains(searchText.toLowerCase())
+                || book.getTopic().toLowerCase().contains(searchText.toLowerCase());
             return matchesCategory && matchesSearch;
         });
 
-        int pageSize = cmbPageSize.getValue();
-        int pageCount = (int) Math.ceil((double) filteredData.size() / pageSize);
-        pagination.setPageCount(pageCount > 0 ? pageCount : 1);
+        int pageSize  = cmbPageSize.getValue();
+        int total     = filteredData.size();
+        int pageCount = (int) Math.ceil((double) total / pageSize);
+        if (pageCount < 1) pageCount = 1;
 
+        // Temporarily remove factory, update count, then restore — forces page 0 to re-render
+        pagination.setPageFactory(null);
+        pagination.setPageCount(pageCount);
         pagination.setCurrentPageIndex(0);
-        int toIndex = Math.min(pageSize, filteredData.size());
-        eBookTable.setItems(FXCollections.observableArrayList(filteredData.subList(0, toIndex)));
+        pagination.setPageFactory(this::createPage);
+    }
+
+    /** Reload data from DB and refresh the table. */
+    private void refreshData() {
+        masterData.clear();
+        loadDummyData();          // reloads from DB (or fallback)
+        updatePagination();
     }
 
     public void filterByCategory(String category) {
@@ -227,33 +266,40 @@ public class DigitalLibrary {
         colTopic.setCellValueFactory(new PropertyValueFactory<>("topic"));
         colTopic.setPrefWidth(150);
 
-        TableColumn<EBook, Void> colAction = new TableColumn<>("Actions  (No Return Needed)");
-        colAction.setPrefWidth(280);
+        // Actions column — Read & Download buttons only (Free Access label removed)
+        TableColumn<EBook, Void> colAction = new TableColumn<>("Actions");
+        colAction.setPrefWidth(200);
         colAction.setCellFactory(param -> new TableCell<>() {
-            private final Button btnRead     = new Button("📖 Read Now");
+            private final Button btnRead     = new Button("📖 Read");
             private final Button btnDownload = new Button("⬇ Download");
-            private final Label  lblFree     = new Label("🆓 Free Access");
-            private final HBox   pane        = new HBox(8, btnRead, btnDownload, lblFree);
-
+            private final HBox   pane        = new HBox(8, btnRead, btnDownload);
             {
-                btnRead.setStyle("-fx-background-color: #10b981; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 5; -fx-font-weight: bold;");
+                btnRead.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 5; -fx-font-weight: bold;");
                 btnDownload.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 5; -fx-font-weight: bold;");
-                lblFree.setFont(Font.font("Segoe UI", FontWeight.BOLD, 10));
-                lblFree.setTextFill(Color.web("#065f46"));
-                lblFree.setStyle("-fx-background-color: #d1fae5; -fx-background-radius: 10; -fx-padding: 3 8;");
                 pane.setAlignment(Pos.CENTER_LEFT);
-
                 btnRead.setOnAction(e -> openPDF(getTableView().getItems().get(getIndex()).getFilePath()));
                 btnDownload.setOnAction(e -> downloadPDF(
                     getTableView().getItems().get(getIndex()).getFilePath(),
                     getTableView().getItems().get(getIndex()).getTitle()));
             }
-
             @Override
             protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
                 setGraphic(empty ? null : pane);
             }
+        });
+
+        // Right-click context menu — also shows Read & Download on any row
+        eBookTable.setRowFactory(tv -> {
+            javafx.scene.control.TableRow<EBook> row = new javafx.scene.control.TableRow<>();
+            ContextMenu ctx = new ContextMenu();
+            MenuItem mRead = new MenuItem("📖  Read Now");
+            MenuItem mDown = new MenuItem("⬇  Download");
+            mRead.setOnAction(e -> { if (!row.isEmpty()) openPDF(row.getItem().getFilePath()); });
+            mDown.setOnAction(e -> { if (!row.isEmpty()) downloadPDF(row.getItem().getFilePath(), row.getItem().getTitle()); });
+            ctx.getItems().addAll(mRead, mDown);
+            row.setOnContextMenuRequested(e -> { if (!row.isEmpty()) ctx.show(row, e.getScreenX(), e.getScreenY()); });
+            return row;
         });
 
         eBookTable.getColumns().addAll(colTitle, colAuthor, colTopic, colAction);
@@ -265,15 +311,15 @@ public class DigitalLibrary {
     private Button createCategoryChip(String text, boolean isActive) {
         Button btn = new Button(text);
         btn.setFont(Font.font("Segoe UI", 12));
-        String active   = "-fx-background-color: #0f172a; -fx-text-fill: white; -fx-background-radius: 16; -fx-cursor: hand; -fx-padding: 5 14;";
-        String inactive = "-fx-background-color: white; -fx-border-color: #bdc3c7; -fx-text-fill: #1e293b; -fx-border-radius: 16; -fx-background-radius: 16; -fx-cursor: hand; -fx-padding: 5 14;";
+        String active   = "-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-background-radius: 16; -fx-cursor: hand; -fx-padding: 5 14;";
+        String inactive = "-fx-background-color: white; -fx-border-color: #bdc3c7; -fx-text-fill: #374151; -fx-border-radius: 16; -fx-background-radius: 16; -fx-cursor: hand; -fx-padding: 5 14;";
         btn.setStyle(isActive ? active : inactive);
         return btn;
     }
 
     private void updateChipStyles(Button selectedBtn) {
-        String active   = "-fx-background-color: #0f172a; -fx-text-fill: white; -fx-background-radius: 16; -fx-cursor: hand; -fx-padding: 5 14;";
-        String inactive = "-fx-background-color: white; -fx-border-color: #bdc3c7; -fx-text-fill: #1e293b; -fx-border-radius: 16; -fx-background-radius: 16; -fx-cursor: hand; -fx-padding: 5 14;";
+        String active   = "-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-background-radius: 16; -fx-cursor: hand; -fx-padding: 5 14;";
+        String inactive = "-fx-background-color: white; -fx-border-color: #bdc3c7; -fx-text-fill: #374151; -fx-border-radius: 16; -fx-background-radius: 16; -fx-cursor: hand; -fx-padding: 5 14;";
         for (javafx.scene.Node node : categoriesBox.getChildren()) {
             if (node instanceof Button) node.setStyle(inactive);
         }

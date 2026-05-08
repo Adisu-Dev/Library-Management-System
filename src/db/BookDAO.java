@@ -89,14 +89,52 @@ public class BookDAO {
     }
 
     public static boolean deleteBook(int id) {
-        String query = "DELETE FROM Books WHERE BookID=?";
+        // First check if this book has any active (unreturned) borrow records
+        String checkActive = "SELECT COUNT(*) FROM BorrowRecords WHERE BookID = ? AND ReturnDate IS NULL";
         try (Connection conn = DatabaseConnection.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(query)) {
-            pstmt.setInt(1, id);
-            return pstmt.executeUpdate() > 0;
+             PreparedStatement chk = conn.prepareStatement(checkActive)) {
+            chk.setInt(1, id);
+            ResultSet rs = chk.executeQuery();
+            if (rs.next() && rs.getInt(1) > 0) {
+                // Cannot delete — book is currently borrowed
+                throw new SQLException("ACTIVE_BORROWS");
+            }
         } catch (SQLException e) {
+            if (e.getMessage().equals("ACTIVE_BORROWS")) throw new RuntimeException("ACTIVE_BORROWS");
+            System.out.println("Delete check error: " + e.getMessage());
+            return false;
+        }
+
+        // Delete borrow history first (past records where book was returned)
+        String deleteHistory = "DELETE FROM BorrowRecords WHERE BookID = ? AND ReturnDate IS NOT NULL";
+        // Delete reservations
+        String deleteReservations = "DELETE FROM Reservations WHERE BookID = ?";
+        // Then delete the book
+        String deleteBook = "DELETE FROM Books WHERE BookID = ?";
+
+        Connection conn = null;
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false);
+
+            try (PreparedStatement p1 = conn.prepareStatement(deleteHistory)) {
+                p1.setInt(1, id); p1.executeUpdate();
+            }
+            try (PreparedStatement p2 = conn.prepareStatement(deleteReservations)) {
+                p2.setInt(1, id); p2.executeUpdate();
+            }
+            try (PreparedStatement p3 = conn.prepareStatement(deleteBook)) {
+                p3.setInt(1, id);
+                int rows = p3.executeUpdate();
+                conn.commit();
+                return rows > 0;
+            }
+        } catch (SQLException e) {
+            try { if (conn != null) conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
             System.out.println("Delete Book Error: " + e.getMessage());
             return false;
+        } finally {
+            try { if (conn != null) { conn.setAutoCommit(true); conn.close(); } } catch (SQLException e) { e.printStackTrace(); }
         }
     }
     // 🚀 በ Category (ዘርፍ) ለይቶ ማምጫ ሜተድ

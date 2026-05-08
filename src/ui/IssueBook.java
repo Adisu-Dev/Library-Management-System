@@ -32,6 +32,14 @@ public class IssueBook {
     private TextField txtSearch;
     private Label lblDueDatePreview;
 
+    /** Optional callback fired after a successful issue — used to refresh the parent dashboard. */
+    private Runnable onIssueSuccess;
+
+    /** Set a callback to be called after a book is successfully issued. */
+    public void setOnIssueSuccess(Runnable callback) {
+        this.onIssueSuccess = callback;
+    }
+
     // 🚀 አሁን ሜተዱ የሚያስረክበው VBox ነው (ይህ VBox ዳሽቦርዱ መሃል ላይ ይገባል)
     public VBox getView() {
         VBox root = new VBox();
@@ -144,7 +152,7 @@ public class IssueBook {
 
         Label lblRows = new Label("Rows per page:");
         cmbPageSize = new ComboBox<>(FXCollections.observableArrayList(5, 10, 20, 50));
-        cmbPageSize.setValue(10);
+        cmbPageSize.setValue(5);
         cmbPageSize.setOnAction(e -> updatePagination());
 
         tableControls.getChildren().addAll(txtSearch, lblRows, cmbPageSize);
@@ -268,6 +276,8 @@ public class IssueBook {
                 lblDueDatePreview.setText("Expected Return: " + LocalDate.now().plusDays(7).toString());
                 lblDueDatePreview.setTextFill(Color.web("#27ae60"));
                 loadIssuedBooks();
+                // Notify parent dashboard to refresh KPIs
+                if (onIssueSuccess != null) onIssueSuccess.run();
             } else {
                 showAlert(Alert.AlertType.ERROR, "Error", result);
             }

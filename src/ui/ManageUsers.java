@@ -108,7 +108,7 @@ public class ManageUsers {
                 lblNote,
                 new Label("Full Name"), txtName,
                 new Label("Username"), txtUser,
-                new Label("Password"), txtPass,
+                new Label("Password"), DashboardShell.eyeWrap(txtPass),
                 new Label("Phone Number"), txtPhone,
                 new Label("Role"), comboRole,
                 btnAdd, btnUpdate, btnDelete, btnResetPwd, btnClear
@@ -148,21 +148,37 @@ public class ManageUsers {
 
         Label lblRows = new Label("Rows per page:");
         cmbPageSize = new ComboBox<>(FXCollections.observableArrayList(5, 10, 20, 50));
-        cmbPageSize.setValue(10);
+        cmbPageSize.setValue(5);
         cmbPageSize.setStyle("-fx-background-color: white; -fx-border-color: #e2e8f0;");
         cmbPageSize.setOnAction(e -> updatePagination());
 
         Button btnExportExcel = new Button("📊 CSV Export");
-        btnExportExcel.setStyle("-fx-background-color: #10b981; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand;");
-        btnExportExcel.setPrefHeight(40);
+        btnExportExcel.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand; -fx-padding: 8 14;");
         btnExportExcel.setOnAction(e -> exportUsersData("Excel"));
 
         Button btnExportPDF = new Button("📄 Text Export");
-        btnExportPDF.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand;");
-        btnExportPDF.setPrefHeight(40);
+        btnExportPDF.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand; -fx-padding: 8 14;");
         btnExportPDF.setOnAction(e -> exportUsersData("PDF"));
 
-        tableControls.getChildren().addAll(txtSearch, lblRows, cmbPageSize, btnExportExcel, btnExportPDF);
+        Button btnRefresh = new Button("🔄 Refresh");
+        btnRefresh.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand; -fx-padding: 8 14;");
+        btnRefresh.setOnAction(e -> loadUsers());
+
+        // Row 1: search + pagination only
+        tableControls.getChildren().addAll(txtSearch, lblRows, cmbPageSize);
+
+        // Row 2: action buttons — full width, never truncated
+        HBox userBtnRow = new HBox(10);
+        userBtnRow.setAlignment(Pos.CENTER_LEFT);
+        userBtnRow.getChildren().addAll(btnExportExcel, btnExportPDF, btnRefresh);
+
+        // Auto-refresh every 20 seconds
+        javafx.animation.Timeline autoRefresh = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(20), ev -> loadUsers())
+        );
+        autoRefresh.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        autoRefresh.play();
+        tableControls.sceneProperty().addListener((obs, o, n) -> { if (n == null) autoRefresh.stop(); });
 
         userTable = new TableView<>();
         setupTableColumns();
@@ -178,6 +194,7 @@ public class ManageUsers {
         tableCard.getChildren().addAll(
                 new Label("📋 Member Directory"){{setFont(Font.font("Segoe UI", FontWeight.BOLD, 16)); setTextFill(Color.web("#1e293b"));}},
                 tableControls,
+                userBtnRow,
                 userTable,
                 paginationBox
         );
@@ -202,6 +219,15 @@ public class ManageUsers {
     private boolean validateInput(String name, String user, String pass, String phone, boolean isNewUser) {
         if (name.isEmpty() || user.isEmpty() || phone.isEmpty()) {
             showAlert("Error", "All fields (Name, Username, Phone) are required!");
+            return false;
+        }
+        // Name: letters only, 2–30 chars, no digits
+        if (name.length() < 2 || name.length() > 30) {
+            showAlert("Error", "Full Name must be between 2 and 30 characters.");
+            return false;
+        }
+        if (!name.matches("[\\p{L} .'-]+")) {
+            showAlert("Error", "Full Name must contain letters only — no numbers or special characters.");
             return false;
         }
         if (isNewUser && pass.isEmpty()) {
@@ -266,9 +292,12 @@ public class ManageUsers {
             sortedData != null ? FXCollections.observableArrayList(sortedData) :
                                  FXCollections.observableArrayList(masterData);
         int toIndex = Math.min(fromIndex + pageSize, source.size());
-        userTable.setItems(fromIndex < source.size()
+        ObservableList<UserRecord> pageItems = fromIndex < source.size()
             ? FXCollections.observableArrayList(source.subList(fromIndex, toIndex))
-            : FXCollections.emptyObservableList());
+            : FXCollections.emptyObservableList();
+        userTable.setItems(pageItems);
+        // Force cell re-render so Block/Unblock buttons always appear
+        javafx.application.Platform.runLater(() -> userTable.refresh());
         return new VBox();
     }
 
@@ -280,10 +309,13 @@ public class ManageUsers {
         }
         int pageSize  = cmbPageSize != null ? cmbPageSize.getValue() : 10;
         int pageCount = (int) Math.ceil((double) sortedData.size() / pageSize);
-        pagination.setPageCount(pageCount > 0 ? pageCount : 1);
+        if (pageCount < 1) pageCount = 1;
+
+        // Null-out factory first to force page 0 re-render on every call
+        pagination.setPageFactory(null);
+        pagination.setPageCount(pageCount);
         pagination.setCurrentPageIndex(0);
-        int toIndex = Math.min(pageSize, sortedData.size());
-        userTable.setItems(FXCollections.observableArrayList(sortedData.subList(0, toIndex)));
+        pagination.setPageFactory(this::createPage);
     }
 
     private void setupTableColumns() {
@@ -457,7 +489,7 @@ public class ManageUsers {
         newPassField.setPromptText("Enter new password");
         newPassField.setPrefHeight(40);
         newPassField.setStyle("-fx-background-color: #f8f9fa; -fx-border-color: #e2e8f0; -fx-border-radius: 8;");
-        VBox content = new VBox(8, new Label("New Password:"), newPassField);
+        VBox content = new VBox(8, new Label("New Password:"), DashboardShell.eyeWrap(newPassField));
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);

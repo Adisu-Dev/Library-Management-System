@@ -66,31 +66,48 @@ public class LibrarianDashboard extends Stage {
         Button btnReturn     = createMenuButton("📥 Return Book");
         Button btnCatalog    = createMenuButton("📚 Book Catalog");
         Button btnUpload     = createMenuButton("☁️ Upload E-Book");
+        Button btnRequests   = createMenuButton("📋 Borrow Requests");
         Button btnSettings   = createMenuButton("⚙ Security Settings");
 
-        navButtons = new Button[]{btnDash, btnIssue, btnReturn, btnCatalog, btnUpload, btnSettings};
+        navButtons = new Button[]{btnDash, btnIssue, btnReturn, btnCatalog, btnUpload, btnRequests, btnSettings};
         setActiveMenu(btnDash);
 
-        btnDash.setOnAction(e -> { setActiveMenu(btnDash); root.setCenter(dashboardView); });
-        btnIssue.setOnAction(e -> { setActiveMenu(btnIssue); root.setCenter(wrapInScroll(new IssueBook().getView())); });
-        btnReturn.setOnAction(e -> { setActiveMenu(btnReturn); root.setCenter(wrapInScroll(new ReturnBook().getView())); });
+        btnDash.setOnAction(e -> { setActiveMenu(btnDash); refreshDashboard(); });
+        btnIssue.setOnAction(e -> {
+            setActiveMenu(btnIssue);
+            IssueBook ib = new IssueBook();
+            ib.setOnIssueSuccess(() -> refreshDashboard());
+            root.setCenter(wrapInScroll(ib.getView()));
+        });
+        btnReturn.setOnAction(e -> {
+            setActiveMenu(btnReturn);
+            ReturnBook rb = new ReturnBook();
+            rb.setOnReturnSuccess(() -> refreshDashboard());
+            root.setCenter(wrapInScroll(rb.getView()));
+        });
         btnCatalog.setOnAction(e -> { setActiveMenu(btnCatalog); root.setCenter(wrapInScroll(new ManageBooks().getView())); });
         btnUpload.setOnAction(e -> { setActiveMenu(btnUpload); root.setCenter(wrapInScroll(new UploadEBook().getView())); });
-        btnSettings.setOnAction(e -> { setActiveMenu(btnSettings); showSecurityDialog(); });
+        btnRequests.setOnAction(e -> {
+            setActiveMenu(btnRequests);
+            BorrowRequestView brv = new BorrowRequestView();
+            brv.setOnApproved(() -> refreshDashboard());
+            root.setCenter(wrapInScroll(brv.getView()));
+        });
+        btnSettings.setOnAction(e -> { setActiveMenu(btnSettings); DashboardShell.showProfilePopup(librarianName, "Librarian", "📚", librarianId); });
 
-        menuBox.getChildren().addAll(btnDash, btnIssue, btnReturn, btnCatalog, btnUpload, btnSettings);
+        menuBox.getChildren().addAll(btnDash, btnIssue, btnReturn, btnCatalog, btnUpload, btnRequests, btnSettings);
         sidebar.setCenter(menuBox);
 
         Button btnLogout = new Button("LOG OUT");
         btnLogout.setPrefWidth(Double.MAX_VALUE); btnLogout.setPrefHeight(45);
-        btnLogout.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 8;");
+        btnLogout.setStyle("-fx-background-color: #1e293b; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 8;");
         btnLogout.setOnAction(e -> handleLogout());
         sidebar.setBottom(btnLogout);
 
         root.setLeft(sidebar);
 
         // ── Fixed top header ──────────────────────────────────────────
-        root.setTop(DashboardShell.buildHeader(librarianName, "Librarian", "📚"));
+        root.setTop(DashboardShell.buildHeader(librarianName, "Librarian", "📚", librarianId));
 
         // ── Fixed bottom footer ───────────────────────────────────────
         root.setBottom(DashboardShell.buildFooter());
@@ -133,7 +150,7 @@ public class LibrarianDashboard extends Stage {
         kpiRow.getChildren().addAll(
                 createKPICard("Issued Today",    String.valueOf(issuedToday),   "📤", "#3b82f6"),
                 createKPICard("Returned Today",  String.valueOf(returnedToday), "📥", "#10b981"),
-                createKPICard("Overdue Books",   String.valueOf(lm[3]),         "⚠️", "#ef4444"),
+                createKPICard("Overdue Books",   String.valueOf(lm[3]),         "⚠️", "#e2e8f0"),
                 createKPICard("Total Books",     String.valueOf(lm[0]),         "📚", "#8b5cf6"),
                 createKPICard("Total Members",   String.valueOf(lm[1]),         "👥", "#f59e0b")
         );
@@ -152,8 +169,18 @@ public class LibrarianDashboard extends Stage {
 
         HBox quickBtnRow = new HBox(15);
         quickBtnRow.getChildren().addAll(
-                createActionBtn("📤  Issue a Book",        "#3b82f6", e -> { setActiveMenu(navButtons[1]); root.setCenter(wrapInScroll(new IssueBook().getView())); }),
-                createActionBtn("📥  Process Return",      "#10b981", e -> { setActiveMenu(navButtons[2]); root.setCenter(wrapInScroll(new ReturnBook().getView())); }),
+                createActionBtn("📤  Issue a Book", "#3b82f6", e -> {
+                    setActiveMenu(navButtons[1]);
+                    IssueBook ib = new IssueBook();
+                    ib.setOnIssueSuccess(() -> refreshDashboard());
+                    root.setCenter(wrapInScroll(ib.getView()));
+                }),
+                createActionBtn("📥  Process Return", "#10b981", e -> {
+                    setActiveMenu(navButtons[2]);
+                    ReturnBook rb = new ReturnBook();
+                    rb.setOnReturnSuccess(() -> refreshDashboard());
+                    root.setCenter(wrapInScroll(rb.getView()));
+                }),
                 createActionBtn("📚  Manage Book Catalog", "#8b5cf6", e -> { setActiveMenu(navButtons[3]); root.setCenter(wrapInScroll(new ManageBooks().getView())); }),
                 createActionBtn("☁️  Upload E-Book",       "#f59e0b", e -> { setActiveMenu(navButtons[4]); root.setCenter(wrapInScroll(new UploadEBook().getView())); })
         );
@@ -166,7 +193,7 @@ public class LibrarianDashboard extends Stage {
         overdueCard.setEffect(new DropShadow(10, Color.rgb(0,0,0,0.06)));
         Label lblOD = new Label("🚨 Overdue Alerts");
         lblOD.setFont(Font.font("Segoe UI", FontWeight.BOLD, 15));
-        lblOD.setTextFill(Color.web("#ef4444"));
+        lblOD.setTextFill(Color.web("#1e293b"));
         overdueCard.getChildren().add(lblOD);
 
         try (java.sql.Connection conn = db.DatabaseConnection.getConnection()) {
@@ -197,7 +224,7 @@ public class LibrarianDashboard extends Stage {
                     lBook.setTextFill(Color.web("#64748b"));
                     Label lFine = new Label(days + "d · " + String.format("%.0f", fine) + " ETB");
                     lFine.setFont(Font.font("Segoe UI", FontWeight.BOLD, 12));
-                    lFine.setTextFill(Color.web("#ef4444"));
+                    lFine.setTextFill(Color.web("#64748b"));
                     row.getChildren().addAll(lName, lBook, r, lFine);
                     overdueCard.getChildren().add(row);
                 }
@@ -311,6 +338,11 @@ public class LibrarianDashboard extends Stage {
         root.setCenter(dashboardView);
     }
 
+    /** Rebuilds the main dashboard content with fresh DB data and shows it. */
+    private void refreshDashboard() {
+        setupMainContent();
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // Helpers
     // ═══════════════════════════════════════════════════════════════
@@ -324,7 +356,7 @@ public class LibrarianDashboard extends Stage {
     private VBox createKPICard(String title, String value, String icon, String color) {
         VBox card = new VBox(8);
         card.setPadding(new Insets(20));
-        card.setStyle("-fx-background-color: white; -fx-background-radius: 10; -fx-border-color: " + color + "; -fx-border-width: 0 0 0 5;");
+        card.setStyle("-fx-background-color: white; -fx-background-radius: 10; -fx-border-color: #e2e8f0; -fx-border-width: 0 0 0 5;");
         card.setEffect(new DropShadow(10, Color.rgb(0,0,0,0.05)));
         HBox.setHgrow(card, Priority.ALWAYS);
 
@@ -342,11 +374,10 @@ public class LibrarianDashboard extends Stage {
         return card;
     }
 
-    private Button createActionBtn(String text, String color,
-                                   javafx.event.EventHandler<javafx.event.ActionEvent> handler) {
+    private Button createActionBtn(String text, String color, javafx.event.EventHandler<javafx.event.ActionEvent> handler) {
         Button btn = new Button(text);
         btn.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
-        String base  = "-fx-background-color: white; -fx-text-fill: #1e293b; -fx-border-color: " + color +
+        String base  = "-fx-background-color: white; -fx-text-fill: #1e293b; -fx-border-color: #e2e8f0" +
                 "; -fx-border-radius: 8; -fx-background-radius: 8; -fx-cursor: hand; -fx-padding: 12 24;";
         String hover = "-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-border-color: #3b82f6" +
                 "; -fx-border-radius: 8; -fx-background-radius: 8; -fx-cursor: hand; -fx-padding: 12 24;";
@@ -391,41 +422,12 @@ public class LibrarianDashboard extends Stage {
         btn.setStyle(active);
     }
 
-    private void showSecurityDialog() {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Security Settings");
-        dialog.setHeaderText("Change Your Password");
-        VBox content = new VBox(10);
-        PasswordField txtOld     = new PasswordField(); txtOld.setPromptText("Current Password");
-        PasswordField txtNew     = new PasswordField(); txtNew.setPromptText("New Password");
-        PasswordField txtConfirm = new PasswordField(); txtConfirm.setPromptText("Confirm New Password");
-        content.getChildren().addAll(new Label("Current Password:"), txtOld,
-                new Label("New Password:"), txtNew, new Label("Confirm:"), txtConfirm);
-        dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
-        Optional<ButtonType> result = dialog.showAndWait();
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            if (txtNew.getText().equals(txtConfirm.getText()) && !txtNew.getText().isEmpty()) {
-                new Alert(Alert.AlertType.INFORMATION, "Password changed successfully!").show();
-            } else {
-                new Alert(Alert.AlertType.ERROR, "Passwords do not match!").show();
-            }
-        }
-    }
-
     private void handleLogout() {
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "Are you sure you want to logout?",
-                ButtonType.YES, ButtonType.NO);
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+            "Are you sure you want to logout?", ButtonType.YES, ButtonType.NO);
         Optional<ButtonType> result = confirm.showAndWait();
         if (result.isPresent() && result.get() == ButtonType.YES) {
-            this.close();
-            try {
-                Stage loginStage = new Stage();
-                loginStage.setTitle("Smart Library | LMS 2026");
-                loginStage.setMaximized(true);
-                loginStage.setScene(new Scene(new LoginForm().getView(), 1000, 600));
-                loginStage.show();
-            } catch (Exception ex) { ex.printStackTrace(); }
+            AppNavigator.goToLanding(this);
         }
     }
 }

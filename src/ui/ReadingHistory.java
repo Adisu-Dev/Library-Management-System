@@ -1,5 +1,6 @@
 package ui;
 
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.collections.transformation.FilteredList;
@@ -18,144 +19,250 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.concurrent.Executors;
 
-// 1. extends Stage የሚለውን አጥፍተነዋል
+/**
+ * Feature 1 — Dynamic Reading History
+ *
+ * Fetches borrow records from the DB on a background thread, then binds
+ * the result to an ObservableList<HistoryRecord> that drives a TableView.
+ * Any future call to refresh() re-fetches and the UI updates automatically
+ * because the TableView is bound to the same ObservableList.
+ *
+ * Threading contract:
+ *   - DB work runs on a single-thread executor (never blocks the FX thread).
+ *   - All ObservableList mutations happen inside Platform.runLater().
+ */
 public class ReadingHistory {
 
+    // ── Observable data source — TableView is bound to this list ─────
+    private final ObservableList<HistoryRecord> masterData =
+            FXCollections.observableArrayList();
+
+    private FilteredList<HistoryRecord> filteredData;
     private TableView<HistoryRecord> table;
     private Pagination pagination;
-    private ObservableList<HistoryRecord> masterData;
-    private FilteredList<HistoryRecord> filteredData;
     private ComboBox<Integer> cmbPageSize;
     private TextField txtSearch;
+    private Label lblStatus;
 
-    // 2. ዋናውን ኮንቴነር የሚይዝ Variable (በ SPA የዊንዶው መጎተቻዎች አያስፈልጉንም)
-    private BorderPane view;
+    private final int studentId;
+    private final BorderPane view;
 
-    public ReadingHistory() {
-        // 3. Stage ሎጂኮችን አጥፍተን BorderPane እንፈጥራለን
+    // ── Background executor — daemon so it doesn't block JVM shutdown ─
+    private static final java.util.concurrent.ExecutorService BG =
+            Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "ReadingHistory-Loader");
+                t.setDaemon(true);
+                return t;
+            });
+
+    public ReadingHistory() { this(0); }
+
+    public ReadingHistory(int studentId) {
+        this.studentId = studentId;
         view = new BorderPane();
-        view.setStyle("-fx-background-color: #f4f7f6;"); // ከዳሽቦርዱ ጋር እንዲመሳሰል
+        view.setStyle("-fx-background-color: #f4f7f6;");
+        view.setCenter(buildContent());
 
-        // ==========================================
-        // Main Content Area (Custom Title Bar ሙሉ በሙሉ ወጥቷል)
-        // ==========================================
-        VBox contentBox = new VBox(25);
+        // Kick off the initial load
+        loadFromDatabase();
+    }
+
+    public BorderPane getView() { return view; }
+
+    // ─────────────────────────────────────────────────────────────────
+    // UI construction
+    // ─────────────────────────────────────────────────────────────────
+    private VBox buildContent() {
+        VBox contentBox = new VBox(20);
         contentBox.setPadding(new Insets(30, 35, 35, 35));
+
+        // ── Header row ────────────────────────────────────────────────
+        HBox headerRow = new HBox(12);
+        headerRow.setAlignment(Pos.CENTER_LEFT);
 
         Label lblHeader = new Label("⏳ Your Reading Journey");
         lblHeader.setFont(Font.font("Segoe UI", FontWeight.BOLD, 26));
         lblHeader.setTextFill(Color.web("#2c3e50"));
 
-        HBox tableControls = new HBox(15);
-        tableControls.setAlignment(Pos.CENTER_LEFT);
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+
+        // Live status indicator
+        lblStatus = new Label("⏳ Loading…");
+        lblStatus.setFont(Font.font("Segoe UI", 12));
+        lblStatus.setTextFill(Color.web("#64748b"));
+
+        // Refresh button — re-fetches from DB on demand
+        Button btnRefresh = new Button("🔄 Refresh");
+        btnRefresh.setStyle(
+            "-fx-background-color: #3b82f6; -fx-text-fill: white;" +
+            "-fx-font-weight: bold; -fx-background-radius: 8; -fx-cursor: hand; -fx-padding: 6 14;");
+        btnRefresh.setOnAction(e -> loadFromDatabase());
+
+        headerRow.getChildren().addAll(lblHeader, sp, lblStatus, btnRefresh);
+
+        // ── Toolbar: search + page-size ───────────────────────────────
+        HBox toolbar = new HBox(15);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
 
         txtSearch = new TextField();
-        txtSearch.setPromptText("🔍 Search history by Book Title...");
+        txtSearch.setPromptText("🔍 Search by Book Title or Status…");
         txtSearch.setPrefHeight(40);
-        txtSearch.setStyle("-fx-background-color: white; -fx-background-radius: 5; -fx-padding: 0 15; -fx-border-color: #bdc3c7; -fx-border-radius: 5;");
+        txtSearch.setStyle(
+            "-fx-background-color: white; -fx-background-radius: 5;" +
+            "-fx-padding: 0 15; -fx-border-color: #bdc3c7; -fx-border-radius: 5;");
         HBox.setHgrow(txtSearch, Priority.ALWAYS);
 
         Label lblRows = new Label("Rows per page:");
         lblRows.setFont(Font.font("Segoe UI", 14));
 
         cmbPageSize = new ComboBox<>(FXCollections.observableArrayList(5, 10, 20, 50));
-        cmbPageSize.setValue(5);
-        cmbPageSize.setStyle("-fx-background-color: white; -fx-border-color: #bdc3c7; -fx-border-radius: 5;");
+        cmbPageSize.setValue(10);
+        cmbPageSize.setStyle(
+            "-fx-background-color: white; -fx-border-color: #bdc3c7; -fx-border-radius: 5;");
         cmbPageSize.setOnAction(e -> updatePagination());
 
-        tableControls.getChildren().addAll(txtSearch, lblRows, cmbPageSize);
+        toolbar.getChildren().addAll(txtSearch, lblRows, cmbPageSize);
 
+        // ── TableView ─────────────────────────────────────────────────
         table = new TableView<>();
-        table.setStyle("-fx-background-radius: 10; -fx-overflow-x: hidden; -fx-font-size: 14px; -fx-font-family: 'Segoe UI';");
-        table.setEffect(new DropShadow(10, Color.rgb(0,0,0,0.05)));
+        table.setStyle(
+            "-fx-background-radius: 10; -fx-font-size: 14px; -fx-font-family: 'Segoe UI';");
+        table.setEffect(new DropShadow(10, Color.rgb(0, 0, 0, 0.05)));
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        table.setPlaceholder(new Label("⏳ Loading reading history…"));
 
+        // Book Title column
         TableColumn<HistoryRecord, String> colBook = new TableColumn<>("Book Title");
         colBook.setCellValueFactory(new PropertyValueFactory<>("bookTitle"));
-        colBook.setPrefWidth(350);
+        colBook.setPrefWidth(320);
 
-        TableColumn<HistoryRecord, String> colDate = new TableColumn<>("Last Read Date");
-        colDate.setCellValueFactory(new PropertyValueFactory<>("lastRead"));
-        colDate.setPrefWidth(200);
+        // Issue Date column
+        TableColumn<HistoryRecord, String> colIssue = new TableColumn<>("Borrowed On");
+        colIssue.setCellValueFactory(new PropertyValueFactory<>("issueDate"));
+        colIssue.setPrefWidth(130);
 
-        TableColumn<HistoryRecord, String> colStatus = new TableColumn<>("Completion Level");
-        colStatus.setCellValueFactory(new PropertyValueFactory<>("completion"));
-        colStatus.setPrefWidth(200);
+        // Return Date column
+        TableColumn<HistoryRecord, String> colReturn = new TableColumn<>("Returned On");
+        colReturn.setCellValueFactory(new PropertyValueFactory<>("returnDate"));
+        colReturn.setPrefWidth(130);
 
-        table.getColumns().addAll(colBook, colDate, colStatus);
-        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        // Status column — color-coded
+        TableColumn<HistoryRecord, String> colStatus = new TableColumn<>("Status");
+        colStatus.setCellValueFactory(new PropertyValueFactory<>("status"));
+        colStatus.setPrefWidth(160);
+        colStatus.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) { setText(null); setStyle(""); return; }
+                setText(item);
+                if (item.contains("Returned"))
+                    setTextFill(Color.web("#10b981"));
+                else if (item.contains("Overdue"))
+                    setTextFill(Color.web("#ef4444"));
+                else
+                    setTextFill(Color.web("#3b82f6"));
+                setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
+            }
+        });
 
-        masterData = FXCollections.observableArrayList(
-                new HistoryRecord("Advanced Java & JavaFX", "2026-04-12", "🟢 65% Completed"),
-                new HistoryRecord("Introduction to Algorithms", "2026-04-10", "✅ 100% Finished"),
-                new HistoryRecord("Flutter Development Guide", "2026-04-08", "🟡 15% Started"),
-                new HistoryRecord("Dertogada", "2026-04-01", "✅ 100% Finished"),
-                new HistoryRecord("Database Management Systems", "2026-03-25", "🟠 40% Reading"),
-                new HistoryRecord("Yefikir Chemistry", "2026-03-20", "✅ 100% Finished")
-        );
+        table.getColumns().addAll(colBook, colIssue, colReturn, colStatus);
 
+        // ── FilteredList bound to masterData ──────────────────────────
         filteredData = new FilteredList<>(masterData, p -> true);
+
+        // Live search — predicate updates whenever the text field changes
         txtSearch.textProperty().addListener((obs, oldVal, newVal) -> {
             filteredData.setPredicate(rec -> {
                 if (newVal == null || newVal.isEmpty()) return true;
-                return rec.getBookTitle().toLowerCase().contains(newVal.toLowerCase());
+                String lower = newVal.toLowerCase();
+                return rec.getBookTitle().toLowerCase().contains(lower)
+                    || rec.getStatus().toLowerCase().contains(lower);
             });
             updatePagination();
         });
 
+        // ── Pagination ────────────────────────────────────────────────
         pagination = new Pagination();
         pagination.setPageFactory(this::createPage);
         VBox.setVgrow(pagination, Priority.ALWAYS);
 
-        updatePagination();
-
+        // ── Footer: export buttons ────────────────────────────────────
         HBox footer = new HBox(15);
         footer.setAlignment(Pos.CENTER_RIGHT);
 
-        Button btnExportExcel = new Button("📊 Export to Excel");
-        btnExportExcel.setPrefHeight(40);
-        btnExportExcel.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
-        btnExportExcel.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-background-radius: 20; -fx-cursor: hand; -fx-padding: 0 20;");
-        btnExportExcel.setOnAction(e -> exportData("Excel"));
+        Button btnExportCSV = new Button("📊 Export to CSV");
+        styleExportBtn(btnExportCSV);
+        btnExportCSV.setOnAction(e -> exportData("CSV"));
 
-        Button btnExportPDF = new Button("📄 Export to PDF");
-        btnExportPDF.setPrefHeight(40);
-        btnExportPDF.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
-        btnExportPDF.setStyle("-fx-background-color: #c0392b; -fx-text-fill: white; -fx-background-radius: 20; -fx-cursor: hand; -fx-padding: 0 20;");
-        btnExportPDF.setOnAction(e -> exportData("PDF"));
+        Button btnExportTxt = new Button("📄 Export to TXT");
+        styleExportBtn(btnExportTxt);
+        btnExportTxt.setOnAction(e -> exportData("TXT"));
 
-        // ማስታወሻ: "Close History" የሚለው በተን ወጥቷል (SPA ላይ ሜኑ ነው የሚነካው)
+        footer.getChildren().addAll(btnExportCSV, btnExportTxt);
 
-        footer.getChildren().addAll(btnExportExcel, btnExportPDF);
-
-        contentBox.getChildren().addAll(lblHeader, tableControls, pagination, footer);
-
-        view.setCenter(contentBox);
+        contentBox.getChildren().addAll(headerRow, toolbar, pagination, footer);
+        return contentBox;
     }
 
-    // 4. ለ Dashboard ቪውውን አሳልፎ የሚሰጥ Method
-    public BorderPane getView() {
-        return view;
+    // ─────────────────────────────────────────────────────────────────
+    // Feature 1 core: background DB fetch → Platform.runLater UI update
+    // ─────────────────────────────────────────────────────────────────
+    private void loadFromDatabase() {
+        // Show loading state on FX thread immediately
+        Platform.runLater(() -> {
+            lblStatus.setText("⏳ Loading…");
+            table.setPlaceholder(new Label("⏳ Fetching reading history from database…"));
+        });
+
+        BG.submit(() -> {
+            // --- runs on background thread ---
+            List<String[]> rows = db.BorrowDAO.getReadingHistory(studentId);
+
+            // --- back to FX thread to update UI ---
+            Platform.runLater(() -> {
+                masterData.clear();
+                for (String[] r : rows) {
+                    // r[0]=Title, r[1]=IssueDate, r[2]=ReturnDate (or "—"), r[3]=Status
+                    masterData.add(new HistoryRecord(r[0], r[1], r[2], r[3]));
+                }
+
+                if (masterData.isEmpty()) {
+                    table.setPlaceholder(new Label("📚 No borrow history yet — start reading!"));
+                    lblStatus.setText("✅ No records found");
+                } else {
+                    table.setPlaceholder(new Label("No results match your search."));
+                    lblStatus.setText("✅ " + masterData.size() + " record(s) loaded");
+                }
+
+                updatePagination();
+            });
+
+            // Log the view action (safe — ActivityLog uses Platform.runLater internally)
+            db.ActivityLog.log(studentId, "Viewed reading history");
+        });
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // Pagination helpers
+    // ─────────────────────────────────────────────────────────────────
     private VBox createPage(int pageIndex) {
-        int pageSize = cmbPageSize != null ? cmbPageSize.getValue() : 5;
+        int pageSize  = cmbPageSize != null ? cmbPageSize.getValue() : 10;
         int fromIndex = pageIndex * pageSize;
-        int toIndex = Math.min(fromIndex + pageSize, filteredData != null ? filteredData.size() : masterData.size());
+        int toIndex   = Math.min(fromIndex + pageSize, filteredData.size());
 
-        ObservableList<HistoryRecord> sourceList = filteredData != null ? filteredData : masterData;
+        table.setItems(fromIndex < filteredData.size()
+            ? FXCollections.observableArrayList(filteredData.subList(fromIndex, toIndex))
+            : FXCollections.emptyObservableList());
 
-        if (fromIndex < sourceList.size()) {
-            table.setItems(FXCollections.observableArrayList(sourceList.subList(fromIndex, toIndex)));
-        } else {
-            table.setItems(FXCollections.emptyObservableList());
-        }
         return new VBox(table);
     }
 
     private void updatePagination() {
-        if (filteredData == null) filteredData = new FilteredList<>(masterData, p -> true);
-        int pageSize = cmbPageSize != null ? cmbPageSize.getValue() : 5;
+        int pageSize  = cmbPageSize != null ? cmbPageSize.getValue() : 10;
         int pageCount = (int) Math.ceil((double) filteredData.size() / pageSize);
         pagination.setPageCount(pageCount > 0 ? pageCount : 1);
         pagination.setCurrentPageIndex(0);
@@ -164,66 +271,91 @@ public class ReadingHistory {
         table.setItems(FXCollections.observableArrayList(filteredData.subList(0, toIndex)));
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // Export
+    // ─────────────────────────────────────────────────────────────────
     private void exportData(String format) {
         File dir = new File("C:\\LMS_Reports");
         if (!dir.exists()) dir.mkdirs();
 
-        String ext = format.equals("Excel") ? ".csv" : ".txt";
-        File file = new File(dir, "My_Reading_History_" + LocalDate.now() + ext);
+        String ext  = format.equals("CSV") ? ".csv" : ".txt";
+        File   file = new File(dir, "Reading_History_" + LocalDate.now() + ext);
 
         try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
-            ObservableList<HistoryRecord> dataToExport = filteredData != null ? filteredData : masterData;
+            ObservableList<HistoryRecord> data =
+                filteredData != null ? filteredData : masterData;
 
-            if (format.equals("Excel")) {
-                writer.println("Book Title,Last Read Date,Completion Level");
-                for (HistoryRecord record : dataToExport) {
-                    writer.printf("%s,%s,%s\n",
-                            record.getBookTitle().replace(",", " "),
-                            record.getLastRead(),
-                            record.getCompletion()
-                    );
+            if (format.equals("CSV")) {
+                writer.println("Book Title,Borrowed On,Returned On,Status");
+                for (HistoryRecord r : data) {
+                    writer.printf("%s,%s,%s,%s%n",
+                        r.getBookTitle().replace(",", " "),
+                        r.getIssueDate(), r.getReturnDate(), r.getStatus());
                 }
             } else {
-                writer.println("======================================================");
-                writer.println("               BAHIR DAR UNIVERSITY LMS               ");
-                writer.println("              PERSONAL READING HISTORY (PDF)          ");
-                writer.println("======================================================");
-                writer.printf("%-35s | %-15s | %-15s\n", "Book Title", "Last Read Date", "Status");
-                writer.println("------------------------------------------------------");
-                for (HistoryRecord record : dataToExport) {
-                    writer.printf("%-35s | %-15s | %-15s\n",
-                            (record.getBookTitle().length() > 32 ? record.getBookTitle().substring(0, 30) + "..." : record.getBookTitle()),
-                            record.getLastRead(),
-                            record.getCompletion());
+                writer.println("=".repeat(70));
+                writer.println("         BAHIR DAR UNIVERSITY LMS — PERSONAL READING HISTORY");
+                writer.println("=".repeat(70));
+                writer.printf("%-36s | %-12s | %-12s | %-16s%n",
+                    "Book Title", "Borrowed On", "Returned On", "Status");
+                writer.println("-".repeat(70));
+                for (HistoryRecord r : data) {
+                    String title = r.getBookTitle().length() > 33
+                        ? r.getBookTitle().substring(0, 31) + "…" : r.getBookTitle();
+                    writer.printf("%-36s | %-12s | %-12s | %-16s%n",
+                        title, r.getIssueDate(), r.getReturnDate(), r.getStatus());
                 }
-                writer.println("======================================================");
+                writer.println("=".repeat(70));
             }
 
-            Alert a = new Alert(Alert.AlertType.INFORMATION);
-            a.setTitle("Export Success");
-            a.setHeaderText(null);
-            a.setContentText(format + " exported successfully to:\n" + file.getAbsolutePath());
-            a.showAndWait();
+            showAlert(Alert.AlertType.INFORMATION, "Export Success",
+                format + " exported to:\n" + file.getAbsolutePath());
+
         } catch (IOException ex) {
-            Alert a = new Alert(Alert.AlertType.ERROR);
-            a.setContentText("Could not export history: " + ex.getMessage());
-            a.showAndWait();
+            showAlert(Alert.AlertType.ERROR, "Export Failed", ex.getMessage());
         }
     }
 
+    private void styleExportBtn(Button btn) {
+        btn.setPrefHeight(40);
+        btn.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
+        btn.setStyle(
+            "-fx-background-color: #3b82f6; -fx-text-fill: white;" +
+            "-fx-background-radius: 20; -fx-cursor: hand; -fx-padding: 0 20;");
+        btn.setOnMouseEntered(e -> btn.setStyle(
+            "-fx-background-color: #2563eb; -fx-text-fill: white;" +
+            "-fx-background-radius: 20; -fx-cursor: hand; -fx-padding: 0 20;"));
+        btn.setOnMouseExited(e -> btn.setStyle(
+            "-fx-background-color: #3b82f6; -fx-text-fill: white;" +
+            "-fx-background-radius: 20; -fx-cursor: hand; -fx-padding: 0 20;"));
+    }
+
+    private void showAlert(Alert.AlertType type, String title, String msg) {
+        Alert a = new Alert(type);
+        a.setTitle(title); a.setHeaderText(null); a.setContentText(msg);
+        a.showAndWait();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Model — immutable value object for each row
+    // ─────────────────────────────────────────────────────────────────
     public static class HistoryRecord {
         private final String bookTitle;
-        private final String lastRead;
-        private final String completion;
+        private final String issueDate;
+        private final String returnDate;
+        private final String status;
 
-        public HistoryRecord(String bookTitle, String lastRead, String completion) {
-            this.bookTitle = bookTitle;
-            this.lastRead = lastRead;
-            this.completion = completion;
+        public HistoryRecord(String bookTitle, String issueDate,
+                             String returnDate, String status) {
+            this.bookTitle  = bookTitle;
+            this.issueDate  = issueDate;
+            this.returnDate = returnDate != null ? returnDate : "—";
+            this.status     = status;
         }
 
-        public String getBookTitle() { return bookTitle; }
-        public String getLastRead() { return lastRead; }
-        public String getCompletion() { return completion; }
+        public String getBookTitle()  { return bookTitle; }
+        public String getIssueDate()  { return issueDate; }
+        public String getReturnDate() { return returnDate; }
+        public String getStatus()     { return status; }
     }
 }

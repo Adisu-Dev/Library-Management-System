@@ -33,13 +33,15 @@ public class LandingPage {
         // ── Background + dark overlay ─────────────────────────────────
         StackPane bgLayer = new StackPane();
         try {
-            File bgFile = new File("src/images/bdu_bg.jpg");
-            Image bgImage = new Image(bgFile.toURI().toString());
-            BackgroundSize bs = new BackgroundSize(
-                    BackgroundSize.AUTO, BackgroundSize.AUTO, false, false, true, true);
-            bgLayer.setBackground(new Background(new BackgroundImage(
-                    bgImage, BackgroundRepeat.NO_REPEAT, BackgroundRepeat.NO_REPEAT,
-                    BackgroundPosition.CENTER, bs)));
+            java.io.InputStream bgStream = LandingPage.class.getResourceAsStream("/images/bdu_bg.jpg");
+            if (bgStream != null) {
+                Image bgImage = new Image(bgStream);
+                BackgroundSize bs = new BackgroundSize(
+                        BackgroundSize.AUTO, BackgroundSize.AUTO, false, false, true, true);
+                bgLayer.setBackground(new Background(new BackgroundImage(
+                        bgImage, BackgroundRepeat.NO_REPEAT, BackgroundRepeat.NO_REPEAT,
+                        BackgroundPosition.CENTER, bs)));
+            } else { bgLayer.setStyle("-fx-background-color: #020617;"); }
         } catch (Exception ignored) {
             bgLayer.setStyle("-fx-background-color: #020617;");
         }
@@ -52,7 +54,7 @@ public class LandingPage {
         // ── Floating orbs ─────────────────────────────────────────────
         Pane orbLayer = buildOrbLayer();
 
-        // ── Page content (scrollable) ─────────────────────────────────
+        // ── Page content (scrollable — navbar excluded) ───────────────
         VBox pageContent = new VBox(0);
         pageContent.setStyle("-fx-background-color: transparent;");
 
@@ -64,7 +66,8 @@ public class LandingPage {
         featureRow       = buildFeatureRow();
         HBox footer      = buildFooter();
 
-        pageContent.getChildren().addAll(ticker, navbar, hero, aboutSec, howItWorks, featureRow, footer);
+        // Scrollable content — does NOT include ticker or navbar
+        pageContent.getChildren().addAll(hero, aboutSec, howItWorks, featureRow, footer);
 
         scroll = new ScrollPane(pageContent);
         scroll.setFitToWidth(true);
@@ -76,8 +79,17 @@ public class LandingPage {
             "-fx-border-color: transparent;"
         );
 
-        view.getChildren().addAll(bgLayer, orbLayer, scroll);
-        StackPane.setAlignment(scroll, Pos.TOP_LEFT);
+        // ── Fixed header: ticker + navbar pinned at top via BorderPane ─
+        VBox fixedHeader = new VBox(0, ticker, navbar);
+        fixedHeader.setStyle("-fx-background-color: transparent;");
+
+        BorderPane pageLayout = new BorderPane();
+        pageLayout.setStyle("-fx-background-color: transparent;");
+        pageLayout.setTop(fixedHeader);
+        pageLayout.setCenter(scroll);
+
+        view.getChildren().addAll(bgLayer, orbLayer, pageLayout);
+        StackPane.setAlignment(pageLayout, Pos.TOP_LEFT);
 
         playEntranceAnimations(navbar, hero, aboutSec, howItWorks, featureRow);
     }
@@ -156,7 +168,8 @@ public class LandingPage {
         brand.setAlignment(Pos.CENTER_LEFT);
         ImageView logo = new ImageView();
         try {
-            logo.setImage(new Image(new File("src/images/logo.png").toURI().toString()));
+            java.io.InputStream s = LandingPage.class.getResourceAsStream("/images/logo.png");
+            if (s != null) { logo.setImage(new Image(s)); }
             logo.setFitWidth(34); logo.setPreserveRatio(true);
         } catch (Exception ignored) {}
         VBox brandText = new VBox(1);
@@ -172,18 +185,21 @@ public class LandingPage {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button btnSignIn = createOutlineButton("Sign In", "#38bdf8");
-        btnSignIn.setOnAction(e -> navigateToLogin());
-
+        Label navHome     = createNavLink("🏠 Home");
         Label navAbout    = createNavLink("About");
         Label navFeatures = createNavLink("Features");
         Label navContact  = createNavLink("Contact");
 
+        // "Sign In" button in the navbar
+        Button btnSignIn = createOutlineButton("Sign In", "#38bdf8");
+        btnSignIn.setOnAction(e -> navigateToLogin());
+
+        navHome.setOnMouseClicked(e -> scrollToTop());
         navAbout.setOnMouseClicked(e -> scrollToNode(aboutSec));
         navFeatures.setOnMouseClicked(e -> scrollToNode(featureRow));
         navContact.setOnMouseClicked(e -> showContactPopup());
 
-        nav.getChildren().addAll(brand, spacer, navAbout, navFeatures, navContact, btnSignIn);
+        nav.getChildren().addAll(brand, spacer, navHome, navAbout, navFeatures, navContact, btnSignIn);
         return nav;
     }
 
@@ -553,6 +569,8 @@ public class LandingPage {
     // ═══════════════════════════════════════════════════════════════
     // Footer
     // ═══════════════════════════════════════════════════════════════
+    // Footer — Sign In removed (redundant with navbar + hero buttons)
+    // ═══════════════════════════════════════════════════════════════
     private HBox buildFooter() {
         HBox footer = new HBox();
         footer.setAlignment(Pos.CENTER);
@@ -570,21 +588,11 @@ public class LandingPage {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
 
-        Button btnFooterLogin = new Button("Sign In →");
-        btnFooterLogin.setFont(Font.font("Segoe UI", FontWeight.SEMI_BOLD, 12));
-        btnFooterLogin.setStyle(
-            "-fx-background-color: transparent;" +
-            "-fx-text-fill: #38bdf8;" +
-            "-fx-cursor: hand;" +
-            "-fx-border-color: transparent;"
-        );
-        btnFooterLogin.setOnAction(e -> navigateToLogin());
-        btnFooterLogin.setOnMouseEntered(e -> btnFooterLogin.setStyle(
-            "-fx-background-color: transparent; -fx-text-fill: #7dd3fc; -fx-cursor: hand; -fx-border-color: transparent;"));
-        btnFooterLogin.setOnMouseExited(e -> btnFooterLogin.setStyle(
-            "-fx-background-color: transparent; -fx-text-fill: #38bdf8; -fx-cursor: hand; -fx-border-color: transparent;"));
+        Label right = new Label("Bahir Dar Institute of Technology · Faculty of Computing");
+        right.setFont(Font.font("Segoe UI", 12));
+        right.setTextFill(Color.web("#475569"));
 
-        footer.getChildren().addAll(left, spacer, btnFooterLogin);
+        footer.getChildren().addAll(left, spacer, right);
         return footer;
     }
 
@@ -622,17 +630,27 @@ public class LandingPage {
     // ═══════════════════════════════════════════════════════════════
     private void scrollToNode(javafx.scene.Node node) {
         if (scroll == null || node == null) return;
-        // Layout must be done first; run after current pulse
         javafx.application.Platform.runLater(() -> {
             double contentH = scroll.getContent().getBoundsInLocal().getHeight();
             double nodeY    = node.getBoundsInParent().getMinY();
             double vValue   = nodeY / (contentH - scroll.getViewportBounds().getHeight());
-            // Animate scroll
-            double start = scroll.getVvalue();
-            double end   = Math.min(1.0, Math.max(0.0, vValue));
+            double end      = Math.min(1.0, Math.max(0.0, vValue));
             javafx.animation.Timeline tl = new javafx.animation.Timeline(
                 new javafx.animation.KeyFrame(Duration.millis(600),
                     new javafx.animation.KeyValue(scroll.vvalueProperty(), end,
+                        Interpolator.EASE_BOTH))
+            );
+            tl.play();
+        });
+    }
+
+    /** Smoothly scrolls back to the very top of the page (hero section). */
+    private void scrollToTop() {
+        if (scroll == null) return;
+        javafx.application.Platform.runLater(() -> {
+            javafx.animation.Timeline tl = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(Duration.millis(500),
+                    new javafx.animation.KeyValue(scroll.vvalueProperty(), 0.0,
                         Interpolator.EASE_BOTH))
             );
             tl.play();
@@ -777,12 +795,54 @@ public class LandingPage {
     // ═══════════════════════════════════════════════════════════════
     // Navigate to login
     // ═══════════════════════════════════════════════════════════════
+    // Show login as a modal popup over the landing page (DRY — single method)
+    // All three buttons (Sign In navbar, Get Started, Sign In footer) call this
+    // ═══════════════════════════════════════════════════════════════
+    /** Public entry-point used by AppNavigator after logout. */
+    public void showLoginModal() {
+        navigateToLogin();
+    }
+
     private void navigateToLogin() {
         if (view.getScene() == null) return;
-        FadeTransition out = new FadeTransition(Duration.millis(450), view);
-        out.setFromValue(1.0); out.setToValue(0.0);
-        out.setOnFinished(e -> view.getScene().setRoot(new LoginForm().getView()));
-        out.play();
+
+        LoginForm loginForm = new LoginForm();
+        javafx.scene.Parent loginView = loginForm.getView();
+
+        // Semi-transparent dark overlay — landing page stays VISIBLE behind it
+        javafx.scene.layout.StackPane overlay = new javafx.scene.layout.StackPane();
+        overlay.setStyle("-fx-background-color: rgba(2,6,23,0.72);");
+        overlay.setAlignment(javafx.geometry.Pos.CENTER);
+
+        // The LoginForm view is transparent — only the card inside has a background.
+        // Place it directly in the overlay, centred.
+        overlay.getChildren().add(loginView);
+
+        // Overlay fills the entire landing page view
+        overlay.prefWidthProperty().bind(view.widthProperty());
+        overlay.prefHeightProperty().bind(view.heightProperty());
+
+        // Click outside the card (on the dark overlay) to close
+        overlay.setOnMouseClicked(e -> {
+            if (e.getTarget() == overlay) closeModal(overlay);
+        });
+
+        view.getChildren().add(overlay);
+
+        // Fade in
+        overlay.setOpacity(0);
+        javafx.animation.FadeTransition fadeIn = new javafx.animation.FadeTransition(
+            javafx.util.Duration.millis(280), overlay);
+        fadeIn.setFromValue(0); fadeIn.setToValue(1);
+        fadeIn.play();
+    }
+
+    private void closeModal(javafx.scene.layout.StackPane overlay) {
+        javafx.animation.FadeTransition fadeOut = new javafx.animation.FadeTransition(
+            javafx.util.Duration.millis(200), overlay);
+        fadeOut.setFromValue(1); fadeOut.setToValue(0);
+        fadeOut.setOnFinished(e -> view.getChildren().remove(overlay));
+        fadeOut.play();
     }
 
     public StackPane getView() { return view; }

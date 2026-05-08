@@ -177,6 +177,143 @@ public class UserDAO {
     }
 
     // =========================================================
+    // 6b. Update own profile (username + optional password + bio)
+    //     Verifies current password before making any change.
+    //     Returns: 0=success, 1=wrong current password, 2=username taken, 3=db error
+    // =========================================================
+    public static int updateOwnProfile(int userId, String currentPassword,
+                                       String newUsername, String newPassword) {
+        return updateOwnProfile(userId, currentPassword, newUsername, newPassword, null);
+    }
+
+    public static int updateOwnProfile(int userId, String currentPassword,
+                                       String newUsername, String newPassword, String bio) {
+        // 1. Verify current password
+        String verifySql = "SELECT PasswordHash FROM Users WHERE UserID = ?";
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pst = conn.prepareStatement(verifySql)) {
+            pst.setInt(1, userId);
+            ResultSet rs = pst.executeQuery();
+            if (!rs.next()) return 3;
+            String storedHash = rs.getString("PasswordHash");
+            if (!storedHash.equals(PasswordUtil.hashPassword(currentPassword))) {
+                return 1; // wrong current password
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Profile update - verify failed: ", e);
+            return 3;
+        }
+
+        // 2. Check username uniqueness (if username is being changed)
+        if (newUsername != null && !newUsername.trim().isEmpty()) {
+            if (isUsernameTaken(newUsername.trim(), userId)) return 2;
+        }
+
+        // 3. Build and run update
+        boolean changePass = (newPassword != null && !newPassword.trim().isEmpty());
+        boolean changeUser = (newUsername != null && !newUsername.trim().isEmpty());
+        boolean changeBio  = (bio != null);
+
+        if (!changePass && !changeUser && !changeBio) return 0;
+
+        // Check if Bio column exists
+        boolean hasBio = false;
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            if (conn != null) {
+                java.sql.DatabaseMetaData meta = conn.getMetaData();
+                try (ResultSet colRs = meta.getColumns(null, null, "Users", "Bio")) {
+                    hasBio = colRs.next();
+                }
+            }
+        } catch (SQLException ignored) {}
+
+        StringBuilder sql = new StringBuilder("UPDATE Users SET ");
+        if (changeUser) sql.append("Username = ?, ");
+        if (changePass) sql.append("PasswordHash = ?, ");
+        if (changeBio && hasBio) sql.append("Bio = ?, ");
+        String query = sql.toString().replaceAll(", $", "") + " WHERE UserID = ?";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pst = conn.prepareStatement(query)) {
+            int idx = 1;
+            if (changeUser) pst.setString(idx++, newUsername.trim());
+            if (changePass) pst.setString(idx++, PasswordUtil.hashPassword(newPassword));
+            if (changeBio && hasBio) pst.setString(idx++, bio);
+            pst.setInt(idx, userId);
+            pst.executeUpdate();
+            return 0;
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Profile update failed: ", e);
+            return 3;
+        }
+    }
+
+    // =========================================================
+    // 6c. Update bio only (no password verification needed for bio alone)
+    // =========================================================
+    public static boolean updateBio(int userId, String bio) {
+        // Ensure Bio column exists
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            if (conn == null) return false;
+            java.sql.DatabaseMetaData meta = conn.getMetaData();
+            try (ResultSet colRs = meta.getColumns(null, null, "Users", "Bio")) {
+                if (!colRs.next()) {
+                    // Create the column
+                    conn.createStatement().execute(
+                        "ALTER TABLE Users ADD Bio NVARCHAR(300) NULL");
+                }
+            }
+            try (PreparedStatement pst = conn.prepareStatement(
+                    "UPDATE Users SET Bio = ? WHERE UserID = ?")) {
+                pst.setString(1, bio);
+                pst.setInt(2, userId);
+                return pst.executeUpdate() > 0;
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Bio update failed: ", e);
+            return false;
+        }
+    }
+
+    // =========================================================
+    // 6d. Fetch bio for a user
+    // =========================================================
+    public static String getBio(int userId) {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            if (conn == null) return "";
+            java.sql.DatabaseMetaData meta = conn.getMetaData();
+            try (ResultSet colRs = meta.getColumns(null, null, "Users", "Bio")) {
+                if (!colRs.next()) return "";
+            }
+            try (PreparedStatement pst = conn.prepareStatement(
+                    "SELECT Bio FROM Users WHERE UserID = ?")) {
+                pst.setInt(1, userId);
+                ResultSet rs = pst.executeQuery();
+                if (rs.next() && rs.getString("Bio") != null) return rs.getString("Bio");
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Bio fetch failed: ", e);
+        }
+        return "";
+    }
+
+    // =========================================================
+    // 6e. Fetch username by userId
+    // =========================================================
+    public static String getUsernameById(int userId) {
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement pst = conn.prepareStatement(
+                     "SELECT Username FROM Users WHERE UserID = ?")) {
+            pst.setInt(1, userId);
+            ResultSet rs = pst.executeQuery();
+            if (rs.next()) return rs.getString("Username");
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Username fetch failed: ", e);
+        }
+        return "";
+    }
+
+    // =========================================================
     // 7. Block / Unblock a Student account
     // =========================================================
     public static boolean setUserBlocked(int userId, boolean blocked) {

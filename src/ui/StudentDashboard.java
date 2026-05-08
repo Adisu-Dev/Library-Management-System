@@ -75,28 +75,30 @@ public class StudentDashboard extends Stage {
         Button btnDashboard = createMenuButton("🏠 My Dashboard");
         Button btnBrowse    = createMenuButton("📚 Digital Library");
         Button btnHistory   = createMenuButton("⏳ Reading History");
+        Button btnRequest   = createMenuButton("📬 Request to Borrow");
         Button btnSettings  = createMenuButton("⚙ Security & Alerts");
 
-        navButtons = new Button[]{btnDashboard, btnBrowse, btnHistory, btnSettings};
+        navButtons = new Button[]{btnDashboard, btnBrowse, btnHistory, btnRequest, btnSettings};
         setActiveMenu(btnDashboard);
 
-        btnDashboard.setOnAction(e -> { setActiveMenu(btnDashboard); root.setCenter(dashboardView); });
+        btnDashboard.setOnAction(e -> { setActiveMenu(btnDashboard); refreshStudentDashboard(); });
         btnBrowse.setOnAction(e -> { setActiveMenu(btnBrowse); root.setCenter(new DigitalLibrary().getView()); });
-        btnHistory.setOnAction(e -> { setActiveMenu(btnHistory); root.setCenter(new ReadingHistory().getView()); });
-        btnSettings.setOnAction(e -> { setActiveMenu(btnSettings); showSecuritySettingsDialog(); });
+        btnHistory.setOnAction(e -> { setActiveMenu(btnHistory); root.setCenter(new ReadingHistory(studentId).getView()); });
+        btnRequest.setOnAction(e -> { setActiveMenu(btnRequest); showBorrowRequestDialog(); });
+        btnSettings.setOnAction(e -> { setActiveMenu(btnSettings); DashboardShell.showProfilePopup(studentName, "Student", "🎓", studentId); });
 
         Region spacer = new Region(); VBox.setVgrow(spacer, Priority.ALWAYS);
 
         Button btnLogout = new Button("LOG OUT");
         btnLogout.setMaxWidth(Double.MAX_VALUE); btnLogout.setPrefHeight(45);
-        btnLogout.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 8;");
+        btnLogout.setStyle("-fx-background-color: #1e293b; -fx-text-fill: white; -fx-font-weight: bold; -fx-cursor: hand; -fx-background-radius: 8;");
         btnLogout.setOnAction(e -> handleLogout());
 
-        sidebar.getChildren().addAll(btnDashboard, btnBrowse, btnHistory, btnSettings, spacer, btnLogout);
+        sidebar.getChildren().addAll(btnDashboard, btnBrowse, btnHistory, btnRequest, btnSettings, spacer, btnLogout);
         root.setLeft(sidebar);
 
         // ── Fixed top header ──────────────────────────────────────────
-        root.setTop(DashboardShell.buildHeader(studentName, "Student", "🎓"));
+        root.setTop(DashboardShell.buildHeader(studentName, "Student", "🎓", studentId));
 
         // ── Fixed bottom footer ───────────────────────────────────────
         root.setBottom(DashboardShell.buildFooter());
@@ -142,10 +144,10 @@ public class StudentDashboard extends Stage {
 
         HBox kpiRow = new HBox(16);
         kpiRow.getChildren().addAll(
-            createStudentKPI("📚", "Books Borrowed",  String.valueOf(booksHeld),    "#3b82f6"),
+            createStudentKPI("🪪", "Your Library ID",  "#" + studentId,              "#3b82f6"),
+            createStudentKPI("📚", "Books Borrowed",  String.valueOf(booksHeld),    "#1e293b"),
             createStudentKPI("⚠️", "Overdue Books",   String.valueOf(overdueCount), overdueCount > 0 ? "#ef4444" : "#10b981"),
-            createStudentKPI("💰", "Total Fine",      String.format("%.0f ETB", totalFine), totalFine > 0 ? "#ef4444" : "#10b981"),
-            createStudentKPI("📖", "Digital Library", "Free Access",                "#8b5cf6")
+            createStudentKPI("💰", "Total Fine",      String.format("%.0f ETB", totalFine), "#1e293b")
         );
 
         // ── Two-column: Active Borrows table + Quick Actions ──────────
@@ -179,9 +181,10 @@ public class StudentDashboard extends Stage {
                 super.updateItem(item, empty);
                 if (empty || item == null) { setText(null); setStyle(""); return; }
                 setText(item);
-                setStyle(item.equals("Overdue")
-                    ? "-fx-text-fill: #ef4444; -fx-font-weight: bold;"
-                    : "-fx-text-fill: #10b981; -fx-font-weight: bold;");
+                setTextFill(item.equals("Overdue")
+                    ? javafx.scene.paint.Color.web("#ef4444")
+                    : javafx.scene.paint.Color.web("#10b981"));
+                setStyle("-fx-font-weight: bold;");
             }
         });
 
@@ -227,9 +230,7 @@ public class StudentDashboard extends Stage {
             createQuickBtn("📚 Browse Digital Library", "#3b82f6",
                 e -> { setActiveMenu(navButtons[1]); root.setCenter(new DigitalLibrary().getView()); }),
             createQuickBtn("⏳ View Reading History", "#8b5cf6",
-                e -> { setActiveMenu(navButtons[2]); root.setCenter(new ReadingHistory().getView()); }),
-            createQuickBtn("🔐 Change Password", "#10b981",
-                e -> { setActiveMenu(navButtons[3]); showSecuritySettingsDialog(); })
+                e -> { setActiveMenu(navButtons[2]); root.setCenter(new ReadingHistory(studentId).getView()); })
         );
 
         // Fine summary card
@@ -239,7 +240,7 @@ public class StudentDashboard extends Stage {
             : "-fx-background-color: #f0fdf4; -fx-background-radius: 14; -fx-padding: 18; -fx-border-color: #bbf7d0; -fx-border-radius: 14;");
         Label lblFineTitle = new Label(totalFine > 0 ? "⚠️ Outstanding Fine" : "✅ No Outstanding Fines");
         lblFineTitle.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
-        lblFineTitle.setTextFill(totalFine > 0 ? Color.web("#ef4444") : Color.web("#10b981"));
+        lblFineTitle.setTextFill(Color.web("#1e293b"));
         Label lblFineAmt = new Label(totalFine > 0
             ? String.format("%.0f ETB — Please return overdue books", totalFine)
             : "All your books are returned on time.");
@@ -273,11 +274,16 @@ public class StudentDashboard extends Stage {
         root.setCenter(dashboardView);
     }
 
+    /** Rebuilds the student dashboard center with fresh data from DB. */
+    private void refreshStudentDashboard() {
+        setupMainContent();
+    }
+
     private VBox createStudentKPI(String icon, String title, String value, String color) {
         VBox card = new VBox(6);
         card.setPadding(new Insets(16));
         card.setStyle("-fx-background-color: white; -fx-background-radius: 12;" +
-            "-fx-border-color: " + color + "; -fx-border-width: 0 0 0 4;");
+            "-fx-border-color: #e2e8f0; -fx-border-width: 0 0 0 4;");
         card.setEffect(new DropShadow(8, Color.rgb(0,0,0,0.05)));
         HBox.setHgrow(card, Priority.ALWAYS);
         HBox top = new HBox();
@@ -342,71 +348,148 @@ public class StudentDashboard extends Stage {
         return card;
     }
 
-    private void showSecuritySettingsDialog() {
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Security & Alerts Settings");
-        dialog.setHeaderText("Manage Password & Notifications");
+    /**
+     * Feature 2 — Student side: "Request to Borrow" dialog.
+     * Submits a record to BorrowRequests with Status='Pending'.
+     * The librarian then sees it in BorrowRequestView and can Approve/Reject.
+     */
+    private void showBorrowRequestDialog() {
+        javafx.stage.Stage dialog = new javafx.stage.Stage();
+        dialog.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        dialog.setTitle("📬 Request to Borrow a Book");
+        dialog.setResizable(false);
 
-        VBox content = new VBox(15);
+        VBox box = new VBox(16);
+        box.setPadding(new Insets(28, 32, 28, 32));
+        box.setStyle("-fx-background-color: #f8fafc;");
+        box.setPrefWidth(400);
 
-        Label lblPass = new Label("🔐 Change Password");
-        lblPass.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
-        PasswordField txtOld = new PasswordField(); txtOld.setPromptText("Current Password");
-        PasswordField txtNew = new PasswordField(); txtNew.setPromptText("New Strong Password");
-        PasswordField txtConfirm = new PasswordField(); txtConfirm.setPromptText("Confirm New Password");
+        Label lblTitle = new Label("📬 Request to Borrow");
+        lblTitle.setFont(Font.font("Segoe UI", FontWeight.BOLD, 18));
+        lblTitle.setTextFill(Color.web("#1e293b"));
 
-        Label lblAlert = new Label("📧 Email Notifications");
-        lblAlert.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
-        CheckBox chkAlert = new CheckBox("Send me Email alerts 1 day before book is due.");
-        chkAlert.setSelected(true);
-        chkAlert.setStyle("-fx-text-fill: #2c3e50;");
+        Label lblSub = new Label("Enter the Book ID you want to borrow.\nA librarian will review and approve your request.");
+        lblSub.setFont(Font.font("Segoe UI", 13));
+        lblSub.setTextFill(Color.web("#64748b"));
+        lblSub.setWrapText(true);
 
-        content.getChildren().addAll(
-                lblPass, txtOld, txtNew, txtConfirm,
-                new Separator(),
-                lblAlert, chkAlert
-        );
+        Label lblBookIdLabel = new Label("Book ID:");
+        lblBookIdLabel.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
 
-        dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        TextField txtBookId = new TextField();
+        txtBookId.setPromptText("e.g. 42");
+        txtBookId.setPrefHeight(42);
+        txtBookId.setStyle(
+            "-fx-border-color: #e2e8f0; -fx-border-radius: 8;" +
+            "-fx-background-radius: 8; -fx-padding: 0 12; -fx-font-size: 14px;");
 
-        Optional<ButtonType> result = dialog.showAndWait();
-        if (result.isPresent() && result.get() == ButtonType.OK) {
-            boolean isPasswordAttempted = !txtNew.getText().isEmpty();
-
-            if (isPasswordAttempted) {
-                if (txtNew.getText().equals(txtConfirm.getText()) && txtNew.getText().length() >= 6) {
-
-                    // 🚀 የ ዳታቤዝ አፕዴት ሎጂክ እዚህ ይገባል
-                  try (Connection conn = db.DatabaseConnection.getConnection()) {
-                        String query = "UPDATE Users SET PasswordHash = ? WHERE UserID = ?";
-                        PreparedStatement pst = conn.prepareStatement(query);
-                        pst.setString(1, db.PasswordUtil.hashPassword(txtNew.getText())); // SHA-256 hash
-                        pst.setInt(2, studentId);
-                        pst.executeUpdate();
-                    } catch(Exception ex) { ex.printStackTrace(); }
-
-
-                    Alert a = new Alert(Alert.AlertType.INFORMATION, "Password changed successfully!\nEmail alerts configured.");
-                    a.setHeaderText("Settings Saved");
-                    a.show();
-                } else if (txtNew.getText().length() < 6) {
-                    new Alert(Alert.AlertType.WARNING, "Password must be at least 6 characters!").show();
-                } else {
-                    new Alert(Alert.AlertType.ERROR, "New Passwords do not match!").show();
+        // Live book-title lookup
+        Label lblBookInfo = new Label();
+        lblBookInfo.setFont(Font.font("Segoe UI", 12));
+        lblBookInfo.setWrapText(true);
+        txtBookId.textProperty().addListener((obs, o, nv) -> {
+            if (nv == null || nv.trim().isEmpty()) { lblBookInfo.setText(""); return; }
+            try {
+                int bid = Integer.parseInt(nv.trim());
+                try (java.sql.Connection conn = db.DatabaseConnection.getConnection()) {
+                    if (conn != null) {
+                        java.sql.PreparedStatement pst = conn.prepareStatement(
+                            "SELECT Title, AvailableQuantity FROM Books WHERE BookID=?");
+                        pst.setInt(1, bid);
+                        java.sql.ResultSet rs = pst.executeQuery();
+                        if (rs.next()) {
+                            int avail = rs.getInt("AvailableQuantity");
+                            lblBookInfo.setText("📚 " + rs.getString("Title") +
+                                (avail > 0 ? "  ✅ Available" : "  ❌ Out of stock"));
+                            lblBookInfo.setTextFill(avail > 0
+                                ? Color.web("#10b981") : Color.web("#ef4444"));
+                        } else {
+                            lblBookInfo.setText("❌ Book ID not found");
+                            lblBookInfo.setTextFill(Color.web("#ef4444"));
+                        }
+                    }
                 }
-            } else {
-                Alert a = new Alert(Alert.AlertType.INFORMATION, "Email notification preferences updated successfully.");
-                a.setHeaderText("Settings Saved");
-                a.show();
+            } catch (NumberFormatException ignored) {
+                lblBookInfo.setText("⚠️ Enter a numeric Book ID");
+                lblBookInfo.setTextFill(Color.web("#f59e0b"));
+            } catch (java.sql.SQLException ex) {
+                lblBookInfo.setText("⚠️ Database error");
+                lblBookInfo.setTextFill(Color.web("#f59e0b"));
             }
-        }
+        });
+
+        Label lblResult = new Label();
+        lblResult.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
+        lblResult.setWrapText(true);
+
+        Button btnSubmit = new Button("📬 Submit Request");
+        btnSubmit.setMaxWidth(Double.MAX_VALUE);
+        btnSubmit.setPrefHeight(44);
+        btnSubmit.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
+        btnSubmit.setStyle(
+            "-fx-background-color: #f59e0b; -fx-text-fill: #0f172a;" +
+            "-fx-background-radius: 8; -fx-cursor: hand;");
+        btnSubmit.setOnAction(e -> {
+            String raw = txtBookId.getText().trim();
+            if (raw.isEmpty()) {
+                lblResult.setText("⚠️ Please enter a Book ID.");
+                lblResult.setTextFill(Color.web("#f59e0b"));
+                return;
+            }
+            try {
+                int bookId = Integer.parseInt(raw);
+                btnSubmit.setDisable(true);
+                lblResult.setText("⏳ Submitting…");
+                lblResult.setTextFill(Color.web("#64748b"));
+
+                // Run DB call off the FX thread
+                java.util.concurrent.Executors.newSingleThreadExecutor().submit(() -> {
+                    String result = db.BorrowDAO.submitBorrowRequest(bookId, studentId);
+                    javafx.application.Platform.runLater(() -> {
+                        if ("Success".equals(result)) {
+                            lblResult.setText("✅ Request submitted! A librarian will review it shortly.");
+                            lblResult.setTextFill(Color.web("#10b981"));
+                            // Feature 3: log the action with timestamp
+                            db.ActivityLog.log(studentId,
+                                "Submitted borrow request for BookID=" + bookId);
+                            txtBookId.clear();
+                            lblBookInfo.setText("");
+                        } else {
+                            lblResult.setText("❌ " + result);
+                            lblResult.setTextFill(Color.web("#ef4444"));
+                        }
+                        btnSubmit.setDisable(false);
+                    });
+                });
+            } catch (NumberFormatException ex) {
+                lblResult.setText("⚠️ Book ID must be a number.");
+                lblResult.setTextFill(Color.web("#f59e0b"));
+            }
+        });
+
+        Button btnClose = new Button("Close");
+        btnClose.setMaxWidth(Double.MAX_VALUE);
+        btnClose.setPrefHeight(38);
+        btnClose.setStyle(
+            "-fx-background-color: #e2e8f0; -fx-text-fill: #1e293b;" +
+            "-fx-background-radius: 8; -fx-cursor: hand;");
+        btnClose.setOnAction(e -> dialog.close());
+
+        box.getChildren().addAll(
+            lblTitle, lblSub,
+            lblBookIdLabel, txtBookId, lblBookInfo,
+            btnSubmit, lblResult, btnClose);
+
+        dialog.setScene(new javafx.scene.Scene(box));
+        dialog.centerOnScreen();
+        dialog.show();
     }
 
     private void handleLogout() {
-        if(new Alert(Alert.AlertType.CONFIRMATION, "Logout?", ButtonType.YES, ButtonType.NO).showAndWait().orElse(ButtonType.NO) == ButtonType.YES) {
-            this.close();
-            try { new Stage(){{setScene(new Scene(new LoginForm().getView(), 1000, 600)); setMaximized(true);}}.show(); } catch (Exception e){}
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+            "Logout?", ButtonType.YES, ButtonType.NO);
+        if (confirm.showAndWait().orElse(ButtonType.NO) == ButtonType.YES) {
+            AppNavigator.goToLanding(this);
         }
     }
 

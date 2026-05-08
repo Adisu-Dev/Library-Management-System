@@ -134,21 +134,42 @@ public class ManageBooks {
 
         Label lblRows = new Label("Rows per page:");
         cmbPageSize = new ComboBox<>(FXCollections.observableArrayList(5, 10, 20, 50));
-        cmbPageSize.setValue(10);
+        cmbPageSize.setValue(5);
         cmbPageSize.setStyle("-fx-background-color: white; -fx-border-color: #e2e8f0; -fx-border-radius: 5;");
         cmbPageSize.setOnAction(e -> updatePagination());
 
+        // ── Export & Refresh buttons on a separate row so they never get truncated ──
         Button btnExportExcel = new Button("📊 Export to CSV");
-        btnExportExcel.setStyle("-fx-background-color: #10b981; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand;");
-        btnExportExcel.setPrefHeight(40);
+        btnExportExcel.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand; -fx-padding: 8 14;");
         btnExportExcel.setOnAction(e -> exportData("Excel"));
 
-        Button btnExportPDF = new Button("📄 Export Text");
-        btnExportPDF.setStyle("-fx-background-color: #ef4444; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand;");
-        btnExportPDF.setPrefHeight(40);
+        Button btnExportPDF = new Button("📄 Export PDF");
+        btnExportPDF.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand; -fx-padding: 8 14;");
         btnExportPDF.setOnAction(e -> exportData("PDF"));
 
-        tableControls.getChildren().addAll(txtSearch, lblRows, cmbPageSize, btnExportExcel, btnExportPDF);
+        Button btnExportWord = new Button("📝 Export to Word");
+        btnExportWord.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand; -fx-padding: 8 14;");
+        btnExportWord.setOnAction(e -> exportData("Word"));
+
+        Button btnRefresh = new Button("🔄 Refresh");
+        btnRefresh.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 5; -fx-cursor: hand; -fx-padding: 8 14;");
+        btnRefresh.setOnAction(e -> loadBooks());
+
+        // Row 1: search + pagination
+        tableControls.getChildren().addAll(txtSearch, lblRows, cmbPageSize);
+
+        // Row 2: action buttons — full width, never truncated
+        HBox btnRow = new HBox(10);
+        btnRow.setAlignment(Pos.CENTER_LEFT);
+        btnRow.getChildren().addAll(btnExportExcel, btnExportPDF, btnExportWord, btnRefresh);
+
+        // Auto-refresh every 20 seconds
+        javafx.animation.Timeline autoRefresh = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(javafx.util.Duration.seconds(20), ev -> loadBooks())
+        );
+        autoRefresh.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        autoRefresh.play();
+        tableControls.sceneProperty().addListener((obs, o, n) -> { if (n == null) autoRefresh.stop(); });
 
         bookTable = new TableView<>();
         setupTableColumns();
@@ -164,6 +185,7 @@ public class ManageBooks {
         tableCard.getChildren().addAll(
                 new Label("📋 Book Directory"){{setFont(Font.font("Segoe UI", FontWeight.BOLD, 16)); setTextFill(Color.web("#1e293b"));}},
                 tableControls,
+                btnRow,
                 bookTable,
                 paginationBox
         );
@@ -191,9 +213,11 @@ public class ManageBooks {
             sortedData != null ? FXCollections.observableArrayList(sortedData) :
                                  FXCollections.observableArrayList(masterData);
         int toIndex = Math.min(fromIndex + pageSize, source.size());
-        bookTable.setItems(fromIndex < source.size()
+        ObservableList<Book> pageItems = fromIndex < source.size()
             ? FXCollections.observableArrayList(source.subList(fromIndex, toIndex))
-            : FXCollections.emptyObservableList());
+            : FXCollections.emptyObservableList();
+        bookTable.setItems(pageItems);
+        javafx.application.Platform.runLater(() -> bookTable.refresh());
         return new VBox();
     }
 
@@ -206,10 +230,31 @@ public class ManageBooks {
         colAuthor.setCellValueFactory(new PropertyValueFactory<>("author"));
         TableColumn<Book, String> colCat = new TableColumn<>("Category");
         colCat.setCellValueFactory(new PropertyValueFactory<>("category"));
-        TableColumn<Book, Integer> colQty = new TableColumn<>("Quantity");
-        colQty.setCellValueFactory(new PropertyValueFactory<>("quantity"));
 
-        bookTable.getColumns().addAll(colId, colTitle, colAuthor, colCat, colQty);
+        // Total copies in library
+        TableColumn<Book, Integer> colTotal = new TableColumn<>("Total");
+        colTotal.setCellValueFactory(new PropertyValueFactory<>("quantity"));
+
+        // Available copies — this is what students can borrow right now
+        TableColumn<Book, Integer> colAvail = new TableColumn<>("Available");
+        colAvail.setCellValueFactory(new PropertyValueFactory<>("availableQuantity"));
+        colAvail.setCellFactory(col -> new TableCell<>() {
+            @Override protected void updateItem(Integer item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) { setText(null); setStyle(""); return; }
+                setText(String.valueOf(item));
+                // Highlight in red if 0, orange if low, green if healthy
+                if (item == 0) {
+                    setStyle("-fx-text-fill: #ef4444; -fx-font-weight: bold;");
+                } else if (item <= 2) {
+                    setStyle("-fx-text-fill: #f59e0b; -fx-font-weight: bold;");
+                } else {
+                    setStyle("-fx-text-fill: #10b981; -fx-font-weight: bold;");
+                }
+            }
+        });
+
+        bookTable.getColumns().addAll(colId, colTitle, colAuthor, colCat, colTotal, colAvail);
         bookTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
 
         bookTable.getSelectionModel().selectedItemProperty().addListener((obs, old, newSel) -> {
@@ -249,10 +294,13 @@ public class ManageBooks {
         }
         int pageSize  = cmbPageSize.getValue();
         int pageCount = (int) Math.ceil((double) sortedData.size() / pageSize);
-        pagination.setPageCount(pageCount > 0 ? pageCount : 1);
+        if (pageCount < 1) pageCount = 1;
+
+        // Null-out factory first to force page 0 re-render on every call
+        pagination.setPageFactory(null);
+        pagination.setPageCount(pageCount);
         pagination.setCurrentPageIndex(0);
-        int toIndex = Math.min(pageSize, sortedData.size());
-        bookTable.setItems(FXCollections.observableArrayList(sortedData.subList(0, toIndex)));
+        pagination.setPageFactory(this::createPage);
     }
 
     // =========================================================
@@ -271,15 +319,21 @@ public class ManageBooks {
             showAlert(Alert.AlertType.WARNING, "Warning", "Please fill all required fields!");
             return;
         }
+        String authorErr = validateAuthorName(txtAuthor.getText().trim());
+        if (authorErr != null) { showAlert(Alert.AlertType.ERROR, "Invalid Author Name", authorErr); return; }
         try {
             int q = Integer.parseInt(txtQuantity.getText());
             Book b = new Book(0, txtTitle.getText(), txtAuthor.getText(), txtISBN.getText(), cmbCategory.getValue(), q, q);
             if (BookDAO.addBook(b)) {
-                loadBooks();   // ← auto-refresh table
+                loadBooks();
                 clearFields();
                 showAlert(Alert.AlertType.INFORMATION, "Success!", "Book added to catalog.");
             }
-        } catch (Exception e) { showAlert(Alert.AlertType.ERROR, "Check Quantity! Must be a number."); }
+        } catch (NumberFormatException e) {
+            showAlert(Alert.AlertType.ERROR, "Invalid Input", "Quantity must be a valid number.");
+        } catch (Exception e) {
+            showAlert(Alert.AlertType.ERROR, "Error", "Could not add book: " + e.getMessage());
+        }
     }
 
     private void updateBook() {
@@ -287,15 +341,50 @@ public class ManageBooks {
             showAlert(Alert.AlertType.WARNING, "Warning", "Please select a book from the table first.");
             return;
         }
+        String authorErr = validateAuthorName(txtAuthor.getText().trim());
+        if (authorErr != null) { showAlert(Alert.AlertType.ERROR, "Invalid Author Name", authorErr); return; }
         try {
-            int q = Integer.parseInt(txtQuantity.getText());
-            Book b = new Book(selectedBookId, txtTitle.getText(), txtAuthor.getText(), txtISBN.getText(), cmbCategory.getValue(), q, q);
+            int newQty = Integer.parseInt(txtQuantity.getText());
+
+            // Calculate how many copies are currently borrowed (not returned)
+            // Available = newTotal - copiesBorrowed  (never negative)
+            int copiesBorrowed = 0;
+            try (java.sql.Connection conn = db.DatabaseConnection.getConnection()) {
+                if (conn != null) {
+                    java.sql.PreparedStatement pst = conn.prepareStatement(
+                        "SELECT COUNT(*) FROM BorrowRecords WHERE BookID = ? AND ReturnDate IS NULL");
+                    pst.setInt(1, selectedBookId);
+                    java.sql.ResultSet rs = pst.executeQuery();
+                    if (rs.next()) copiesBorrowed = rs.getInt(1);
+                }
+            } catch (java.sql.SQLException ignored) {}
+
+            // Available = total - borrowed, but never negative and never more than total
+            int newAvail = Math.max(0, newQty - copiesBorrowed);
+
+            Book b = new Book(selectedBookId, txtTitle.getText(), txtAuthor.getText(),
+                    txtISBN.getText(), cmbCategory.getValue(), newQty, newAvail);
             if (BookDAO.updateBook(b)) {
-                loadBooks();   // ← auto-refresh table
+                loadBooks();
                 clearFields();
                 showAlert(Alert.AlertType.INFORMATION, "Updated successfully!");
+            } else {
+                showAlert(Alert.AlertType.ERROR, "Update Failed", "Could not update the book. Please try again.");
             }
-        } catch (Exception e) { }
+        } catch (NumberFormatException e) {
+            showAlert(Alert.AlertType.ERROR, "Invalid Input", "Quantity must be a valid number.");
+        } catch (Exception e) {
+            showAlert(Alert.AlertType.ERROR, "Error", "An unexpected error occurred: " + e.getMessage());
+        }
+    }
+
+    /** Author name: letters + spaces + dots + hyphens only, 2–30 chars, no digits. */
+    private String validateAuthorName(String name) {
+        if (name == null || name.isEmpty()) return "Author name is required.";
+        if (name.length() < 2)  return "Author name must be at least 2 characters.";
+        if (name.length() > 30) return "Author name must be at most 30 characters.";
+        if (!name.matches("[\\p{L} .'-]+")) return "Author name must contain letters only — no numbers or special characters.";
+        return null;
     }
 
     private void deleteBook() {
@@ -303,12 +392,34 @@ public class ManageBooks {
             showAlert(Alert.AlertType.WARNING, "Warning", "Please select a book from the table first.");
             return;
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, "Delete this book completely?", ButtonType.YES, ButtonType.NO);
-        if (confirm.showAndWait().get() == ButtonType.YES) {
-            if (BookDAO.deleteBook(selectedBookId)) {
-                loadBooks();   // ← auto-refresh table
-                clearFields();
-                showAlert(Alert.AlertType.INFORMATION, "Book deleted.");
+
+        // Show book name in confirmation
+        String bookTitle = txtTitle.getText().isEmpty() ? "this book" : "'" + txtTitle.getText() + "'";
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+            "Delete " + bookTitle + " from the catalog?\n\nThis will also remove its borrow history.",
+            ButtonType.YES, ButtonType.NO);
+        confirm.setTitle("Confirm Delete");
+        confirm.setHeaderText("Delete Book");
+
+        if (confirm.showAndWait().orElse(ButtonType.NO) == ButtonType.YES) {
+            try {
+                boolean deleted = BookDAO.deleteBook(selectedBookId);
+                if (deleted) {
+                    loadBooks();
+                    clearFields();
+                    showAlert(Alert.AlertType.INFORMATION, "Deleted", "Book removed from catalog successfully.");
+                } else {
+                    showAlert(Alert.AlertType.ERROR, "Delete Failed",
+                        "Could not delete the book. Please try again.");
+                }
+            } catch (RuntimeException ex) {
+                if ("ACTIVE_BORROWS".equals(ex.getMessage())) {
+                    showAlert(Alert.AlertType.ERROR, "Cannot Delete",
+                        "This book cannot be deleted because it is currently borrowed by one or more students.\n\n" +
+                        "Please wait until all copies are returned before deleting.");
+                } else {
+                    showAlert(Alert.AlertType.ERROR, "Delete Failed", ex.getMessage());
+                }
             }
         }
     }
@@ -335,15 +446,46 @@ public class ManageBooks {
             // ── CSV export ────────────────────────────────────────────
             File file = new File(dir, "Library_Catalog_" + LocalDate.now() + ".csv");
             try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
-                writer.println("Book ID,Book Title,Author,ISBN,Category,Quantity");
+                writer.println("Book ID,Book Title,Author,ISBN,Category,Quantity,Available");
                 for (Book book : masterData) {
-                    writer.printf("%d,%s,%s,%s,%s,%d\n",
+                    writer.printf("%d,%s,%s,%s,%s,%d,%d\n",
                             book.getBookID(),
                             book.getTitle().replace(",", " "),
                             book.getAuthor().replace(",", " "),
-                            book.getIsbn(), book.getCategory(), book.getQuantity());
+                            book.getIsbn(), book.getCategory(),
+                            book.getQuantity(), book.getAvailableQuantity());
                 }
                 showAlert(Alert.AlertType.INFORMATION, "Export Success", "CSV saved to:\n" + file.getAbsolutePath());
+            } catch (Exception ex) {
+                showAlert(Alert.AlertType.ERROR, "Export Error", ex.getMessage());
+            }
+
+        } else if (format.equals("Word")) {
+            // ── RTF export — opens in Microsoft Word ──────────────────
+            File file = new File(dir, "Library_Catalog_" + LocalDate.now() + ".rtf");
+            try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
+                writer.println("{\\rtf1\\ansi\\deff0");
+                writer.println("{\\fonttbl{\\f0 Calibri;}}");
+                writer.println("{\\colortbl;\\red0\\green0\\blue0;\\red59\\green130\\blue246;}");
+                writer.println("\\f0\\fs36\\b\\cf2 Smart Library Management System\\b0\\par");
+                writer.println("\\fs24\\cf1 Book Catalog Report\\par");
+                writer.println("\\fs20 Generated: " + LocalDate.now() + "\\par\\par");
+                writer.printf("\\b Total Books in Catalog: \\b0 %d\\par\\par%n", masterData.size());
+                // Table header
+                writer.println("\\trowd\\trgaph108\\cellx800\\cellx3500\\cellx5500\\cellx7000\\cellx8000\\cellx9000");
+                writer.println("\\b\\fs18 ID\\cell Title\\cell Author\\cell Category\\cell Qty\\cell Avail\\cell\\row\\b0");
+                for (Book b : masterData) {
+                    writer.println("\\trowd\\trgaph108\\cellx800\\cellx3500\\cellx5500\\cellx7000\\cellx8000\\cellx9000");
+                    writer.printf("\\fs16 %d\\cell %s\\cell %s\\cell %s\\cell %d\\cell %d\\cell\\row%n",
+                        b.getBookID(),
+                        b.getTitle().replace("\\", "\\\\"),
+                        b.getAuthor().replace("\\", "\\\\"),
+                        b.getCategory(), b.getQuantity(), b.getAvailableQuantity());
+                }
+                writer.println("}");
+                showAlert(Alert.AlertType.INFORMATION, "Export Success",
+                    "Word (RTF) catalog saved to:\n" + file.getAbsolutePath() +
+                    "\n\nDouble-click to open in Microsoft Word.");
             } catch (Exception ex) {
                 showAlert(Alert.AlertType.ERROR, "Export Error", ex.getMessage());
             }

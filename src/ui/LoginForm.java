@@ -1,10 +1,7 @@
 package ui;
 
-import java.io.File;
-import javafx.animation.Animation;
 import javafx.animation.FadeTransition;
 import javafx.animation.Interpolator;
-import javafx.animation.TranslateTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.*;
@@ -18,228 +15,145 @@ import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
-// 🚀 Database Connection Imports
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import db.DatabaseConnection;
 
-// 1. extends Application የሚለውን አጥፍተነዋል
 public class LoginForm {
 
     private int loginAttempts = 0;
     private static final int MAX_ATTEMPTS = 3;
+    private static final String ACCENT   = "#3b82f6";
+    private static final String ACCENT_H = "#2563eb";
 
-    // 2. ዋናውን ቪው የሚይዝ Variable
     private StackPane view;
 
     public LoginForm() {
-        // 3. Stage ላይ ይሰሩ የነበሩትን አጥፍተን StackPane እንፈጥራለን
         view = new StackPane();
+        // TRANSPARENT — when used as overlay on LandingPage, the landing page
+        // background shows through. The card itself has its own dark background.
+        view.setStyle("-fx-background-color: transparent;");
 
-        // ==========================================
-        // Responsive Background
-        // ==========================================
-        try {
-            File bgFile = new File("src/images/bdu_bg.jpg");
-            Image bgImage = new Image(bgFile.toURI().toString());
-
-            BackgroundSize bgSize = new BackgroundSize(BackgroundSize.AUTO, BackgroundSize.AUTO, false, false, true, true);
-            BackgroundImage backgroundImage = new BackgroundImage(bgImage, BackgroundRepeat.NO_REPEAT, BackgroundRepeat.NO_REPEAT, BackgroundPosition.CENTER, bgSize);
-            view.setBackground(new Background(backgroundImage));
-        } catch (Exception e) {
-            System.out.println("Background image Error: " + e.getMessage());
-            view.setStyle("-fx-background-color: linear-gradient(to bottom right, #020617, #0f172a, #1e293b);");
-        }
-
-        // ==========================================
-        // 2. Marquee bar — pinned at the very top
-        // ==========================================
-        // Use a fixed-height HBox so it sits ABOVE the card, not behind it
-        HBox marqueeBar = new HBox();
-        marqueeBar.setMinHeight(44);
-        marqueeBar.setMaxHeight(44);
-        marqueeBar.setAlignment(Pos.CENTER_LEFT);
-        marqueeBar.setStyle(
-            "-fx-background-color: rgba(2,6,23,0.70);" +
-            "-fx-border-color: rgba(56,189,248,0.25);" +
-            "-fx-border-width: 0 0 1 0;"
-        );
-        marqueeBar.setClip(new javafx.scene.shape.Rectangle(20000, 44));
-
-        Label marqueeText = new Label("Welcome to Smart Library Management System  •  Bahir Dar University Poly Campus  •  Smart LMS 2026  •  ");
-        marqueeText.setFont(Font.font("Segoe UI Emoji", FontWeight.BOLD, 18));
-        marqueeText.setTextFill(Color.WHITE);
-
-        DropShadow neonGlow = new DropShadow(15, Color.web("#38bdf8"));
-        neonGlow.setSpread(0.4);
-        marqueeText.setEffect(neonGlow);
-        marqueeBar.getChildren().add(marqueeText);
-
-        TranslateTransition marqueeAnim = new TranslateTransition(Duration.seconds(22), marqueeText);
-        marqueeAnim.setFromX(1200);
-        marqueeAnim.setToX(-1800);
-        marqueeAnim.setCycleCount(Animation.INDEFINITE);
-        marqueeAnim.setInterpolator(Interpolator.LINEAR);
-        marqueeAnim.play();
-
-        FadeTransition pulseAnim = new FadeTransition(Duration.seconds(1.5), marqueeText);
-        pulseAnim.setFromValue(0.80);
-        pulseAnim.setToValue(1.0);
-        pulseAnim.setCycleCount(Animation.INDEFINITE);
-        pulseAnim.setAutoReverse(true);
-        pulseAnim.play();
-
-        // ==========================================
-        // Modern Navy Blue Glass Card
-        // ==========================================
-        VBox loginCard = new VBox(18);
-        loginCard.setMaxWidth(380);
-        loginCard.setMaxHeight(580);
+        // ── Login card — centred popup over the landing page ─────────
+        VBox loginCard = new VBox(24);
+        loginCard.setMaxWidth(500);
+        loginCard.setMinWidth(400);
+        loginCard.setPrefWidth(480);
         loginCard.setAlignment(Pos.CENTER);
-        loginCard.setPadding(new Insets(30, 40, 30, 40));
+        loginCard.setPadding(new Insets(60, 56, 56, 56));
+        loginCard.setStyle(
+            "-fx-background-color: rgba(8,20,42,0.97);" +
+            "-fx-background-radius: 22;" +
+            "-fx-border-radius: 22;" +
+            "-fx-border-color: rgba(56,189,248,0.50);" +
+            "-fx-border-width: 1.8;"
+        );
+        loginCard.setEffect(new DropShadow(60, Color.rgb(0, 0, 0, 0.85)));
 
-        loginCard.setStyle("-fx-background-color: rgba(10, 25, 47, 0.85); " +
-                "-fx-background-radius: 16; " +
-                "-fx-border-radius: 16; " +
-                "-fx-border-color: rgba(56, 189, 248, 0.4); " +
-                "-fx-border-width: 1.5;");
-
-        loginCard.setEffect(new DropShadow(40, Color.rgb(0, 0, 0, 0.7)));
-
-        // Logo
-        ImageView bduLogoView = new ImageView();
+        // Logo — large, matches reference
+        ImageView logoView = new ImageView();
         try {
-            String logoPath = getClass().getResource("/images/logo.png").toExternalForm();
-            Image bduLogo = new Image(logoPath);
-            bduLogoView.setImage(bduLogo);
-            bduLogoView.setFitWidth(80);
-            bduLogoView.setPreserveRatio(true);
-            bduLogoView.setEffect(new DropShadow(5, Color.rgb(0,0,0,0.5)));
-        } catch (Exception e) {
-            System.out.println("Logo image Error: " + e.getMessage());
-        }
+            Image logo = new Image(getClass().getResourceAsStream("/images/logo.png"));
+            logoView.setImage(logo);
+            logoView.setFitWidth(110);
+            logoView.setPreserveRatio(true);
+            logoView.setEffect(new DropShadow(10, Color.rgb(0, 0, 0, 0.5)));
+        } catch (Exception ignored) {}
 
-        // Titles
-        VBox titleBox = new VBox(5);
+        // Title block
+        VBox titleBox = new VBox(8);
         titleBox.setAlignment(Pos.CENTER);
-        Label lblLoginTitle = new Label("System Login");
-        lblLoginTitle.setFont(Font.font("Segoe UI", FontWeight.BOLD, 24));
-        lblLoginTitle.setTextFill(Color.WHITE);
+        Label lblTitle = new Label("System Login");
+        lblTitle.setFont(Font.font("Segoe UI", FontWeight.BOLD, 32));
+        lblTitle.setTextFill(Color.WHITE);
+        Label lblSub = new Label("Secure access for library members");
+        lblSub.setFont(Font.font("Segoe UI", 15));
+        lblSub.setTextFill(Color.web("#94a3b8"));
+        titleBox.getChildren().addAll(lblTitle, lblSub);
 
-        Label lblSubtitle = new Label("Secure access for library members");
-        lblSubtitle.setFont(Font.font("Segoe UI", 13));
-        lblSubtitle.setTextFill(Color.web("#94a3b8"));
-        titleBox.getChildren().addAll(lblLoginTitle, lblSubtitle);
-        VBox.setMargin(titleBox, new Insets(0, 0, 10, 0));
+        // Input style — tall fields matching reference
+        String inputStyle =
+            "-fx-background-color: rgba(255,255,255,0.07);" +
+            "-fx-text-fill: white;" +
+            "-fx-prompt-text-fill: #64748b;" +
+            "-fx-border-color: rgba(255,255,255,0.14);" +
+            "-fx-border-radius: 12; -fx-background-radius: 12;" +
+            "-fx-font-size: 16px; -fx-padding: 0 18;";
 
-        // Shared Input Styles
-        String inputStyle = "-fx-background-color: rgba(255, 255, 255, 0.08); " +
-                "-fx-text-fill: white; " +
-                "-fx-prompt-text-fill: #64748b; " +
-                "-fx-border-color: rgba(255, 255, 255, 0.15); " +
-                "-fx-border-radius: 6; " +
-                "-fx-background-radius: 6; " +
-                "-fx-font-size: 14px; " +
-                "-fx-padding: 0 15;";
-
-        // Username
         TextField txtUser = new TextField();
         txtUser.setPromptText("Username or ID");
-        txtUser.setPrefHeight(45);
+        txtUser.setPrefHeight(58);
         txtUser.setStyle(inputStyle);
 
-        // Password
-        String passStyle = "-fx-background-color: rgba(255, 255, 255, 0.08); -fx-text-fill: white; -fx-prompt-text-fill: #64748b; -fx-border-color: rgba(255, 255, 255, 0.15); -fx-border-radius: 6; -fx-background-radius: 6; -fx-font-size: 14px; -fx-padding: 0 40 0 15;";
+        String passStyle =
+            "-fx-background-color: rgba(255,255,255,0.07);" +
+            "-fx-text-fill: white;" +
+            "-fx-prompt-text-fill: #64748b;" +
+            "-fx-border-color: rgba(255,255,255,0.14);" +
+            "-fx-border-radius: 12; -fx-background-radius: 12;" +
+            "-fx-font-size: 16px; -fx-padding: 0 48 0 18;";
 
         PasswordField txtPassHidden = new PasswordField();
         txtPassHidden.setPromptText("Password");
-        txtPassHidden.setPrefHeight(45);
+        txtPassHidden.setPrefHeight(58);
         txtPassHidden.setStyle(passStyle);
 
         TextField txtPassShown = new TextField();
         txtPassShown.setPromptText("Password");
-        txtPassShown.setPrefHeight(45);
+        txtPassShown.setPrefHeight(58);
         txtPassShown.setStyle(passStyle);
         txtPassShown.setVisible(false);
-
         txtPassShown.textProperty().bindBidirectional(txtPassHidden.textProperty());
 
-        Button btnToggleEye = new Button("👁️");
-        btnToggleEye.setStyle("-fx-background-color: transparent; -fx-text-fill: #94a3b8; -fx-cursor: hand; -fx-font-size: 14px;");
-
-        btnToggleEye.setOnAction(e -> {
-            boolean isHidden = txtPassHidden.isVisible();
-            txtPassHidden.setVisible(!isHidden);
-            txtPassShown.setVisible(isHidden);
-            btnToggleEye.setText(isHidden ? "🙈" : "👁️");
+        Button btnEye = new Button("👁️");
+        btnEye.setStyle("-fx-background-color: transparent; -fx-text-fill: #64748b; -fx-cursor: hand; -fx-font-size: 16px;");
+        btnEye.setOnAction(e -> {
+            boolean h = txtPassHidden.isVisible();
+            txtPassHidden.setVisible(!h);
+            txtPassShown.setVisible(h);
+            btnEye.setText(h ? "🙈" : "👁️");
         });
+        StackPane passPane = new StackPane(txtPassShown, txtPassHidden, btnEye);
+        StackPane.setAlignment(btnEye, Pos.CENTER_RIGHT);
+        StackPane.setMargin(btnEye, new Insets(0, 10, 0, 0));
 
-        StackPane passwordPane = new StackPane(txtPassShown, txtPassHidden, btnToggleEye);
-        StackPane.setAlignment(btnToggleEye, Pos.CENTER_RIGHT);
-        StackPane.setMargin(btnToggleEye, new Insets(0, 5, 0, 0));
-
-        // Forgot Password
+        // Forgot password
         HBox forgotBox = new HBox();
         forgotBox.setAlignment(Pos.CENTER_RIGHT);
         Hyperlink linkForgot = new Hyperlink("Forgot Password?");
         linkForgot.setTextFill(Color.web("#38bdf8"));
-        linkForgot.setStyle("-fx-border-color: transparent; -fx-font-size: 12px; -fx-padding: 0;");
+        linkForgot.setStyle("-fx-border-color: transparent; -fx-font-size: 14px; -fx-padding: 0;");
         forgotBox.getChildren().add(linkForgot);
 
-        // Login Button
+        // Login button — full width, tall, blue
         Button btnLogin = new Button("LOGIN TO SYSTEM");
         btnLogin.setPrefWidth(Double.MAX_VALUE);
-        btnLogin.setPrefHeight(45);
-        btnLogin.setFont(Font.font("Segoe UI", FontWeight.BOLD, 14));
-        btnLogin.setStyle("-fx-background-color: #fbbf24; -fx-text-fill: #0f172a; -fx-background-radius: 6; -fx-cursor: hand;");
+        btnLogin.setPrefHeight(58);
+        btnLogin.setFont(Font.font("Segoe UI", FontWeight.BOLD, 16));
+        String btnBase  = "-fx-background-color:" + ACCENT   + "; -fx-text-fill:white; -fx-background-radius:12; -fx-cursor:hand;";
+        String btnHover = "-fx-background-color:" + ACCENT_H + "; -fx-text-fill:white; -fx-background-radius:12; -fx-cursor:hand;";
+        btnLogin.setStyle(btnBase);
+        btnLogin.setOnMouseEntered(e -> btnLogin.setStyle(btnHover));
+        btnLogin.setOnMouseExited(e  -> btnLogin.setStyle(btnBase));
+        btnLogin.setDefaultButton(true);
+        txtUser.setOnAction(e -> btnLogin.fire());
+        txtPassHidden.setOnAction(e -> btnLogin.fire());
+        txtPassShown.setOnAction(e -> btnLogin.fire());
 
-        btnLogin.setOnMouseEntered(e -> btnLogin.setStyle("-fx-background-color: #f59e0b; -fx-text-fill: #0f172a; -fx-background-radius: 6; -fx-cursor: hand;"));
-        btnLogin.setOnMouseExited(e -> btnLogin.setStyle("-fx-background-color: #fbbf24; -fx-text-fill: #0f172a; -fx-background-radius: 6; -fx-cursor: hand;"));
-
-        // Register Link
+        // Sign-up link
         HBox registerBox = new HBox(5);
         registerBox.setAlignment(Pos.CENTER);
-        Label lblNoAccount = new Label("Don't have an account?");
-        lblNoAccount.setTextFill(Color.web("#94a3b8"));
-        Hyperlink linkRegister = new Hyperlink("Sign Up");
-        linkRegister.setTextFill(Color.web("#38bdf8"));
-        linkRegister.setStyle("-fx-border-color: transparent; -fx-padding: 0; -fx-underline: true;");
-        registerBox.getChildren().addAll(lblNoAccount, linkRegister);
+        Label lblNoAcc = new Label("Don't have an account?");
+        lblNoAcc.setTextFill(Color.web("#94a3b8"));
+        lblNoAcc.setFont(Font.font("Segoe UI", 14));
+        Hyperlink linkReg = new Hyperlink("Sign Up");
+        linkReg.setTextFill(Color.web("#38bdf8"));
+        linkReg.setStyle("-fx-border-color: transparent; -fx-padding: 0; -fx-underline: true; -fx-font-size: 14px;");
+        registerBox.getChildren().addAll(lblNoAcc, linkReg);
 
-        // Demo Section
-        Label lblOr = new Label("── QUICK LOGIN DEMO ──");
-        lblOr.setTextFill(Color.web("#475569"));
-        lblOr.setFont(Font.font("Segoe UI", 11));
-        lblOr.setPadding(new Insets(10, 0, 5, 0));
-
-        HBox demoPanel = new HBox(10);
-        demoPanel.setAlignment(Pos.CENTER);
-        Button btnAdminDemo = createDemoButton("👑 Admin", "#f87171");
-        Button btnLibrarianDemo = createDemoButton("📚 Librarian", "#38bdf8");
-        Button btnStudentDemo = createDemoButton("🎓 Student", "#34d399");
-        demoPanel.getChildren().addAll(btnAdminDemo, btnLibrarianDemo, btnStudentDemo);
-
-        // ==========================================
-        // 🚀 NAVIGATION & DATABASE LOGIC (SPA Integrated)
-        // ==========================================
-
-        linkRegister.setOnAction(e -> {
-            // 🚀 SPA Navigation: እዛው ዊንዶው ላይ ወደ RegisterForm ይቀይራል
-            if (view.getScene() != null) {
-                view.getScene().setRoot(new RegisterForm().getView());
-            }
-        });
-
-        linkForgot.setOnAction(e -> {
-            // 🚀 SPA Navigation: እዛው ዊንዶው ላይ ወደ ForgotPasswordForm ይቀይራል
-            if (view.getScene() != null) {
-                view.getScene().setRoot(new ForgotPasswordForm().getView());
-            }
-        });
-
-        // ── Lockout label (shown during cooldown) ────────────────────
+        // Lockout label
         Label lblLockout = new Label();
         lblLockout.setFont(Font.font("Segoe UI", FontWeight.BOLD, 12));
         lblLockout.setTextFill(Color.web("#ef4444"));
@@ -247,208 +161,149 @@ public class LoginForm {
         lblLockout.setAlignment(Pos.CENTER);
         lblLockout.setMaxWidth(Double.MAX_VALUE);
 
+        loginCard.getChildren().addAll(
+            logoView, titleBox, txtUser, passPane,
+            forgotBox, btnLogin, lblLockout, registerBox
+        );
+
+        // ── Navigation ────────────────────────────────────────────────
+        linkReg.setOnAction(e -> {
+            if (view.getScene() != null)
+                view.getScene().setRoot(new RegisterForm().getView());
+        });
+        linkForgot.setOnAction(e -> {
+            if (view.getScene() != null)
+                view.getScene().setRoot(new ForgotPasswordForm().getView());
+        });
+
+        // ── Login action ──────────────────────────────────────────────
         btnLogin.setOnAction(e -> {
             String u = txtUser.getText().trim();
             String p = txtPassHidden.getText();
-
             if (u.isEmpty() || p.isEmpty()) {
                 showAlert("Missing Input", "Please enter both Username and Password.");
                 return;
             }
-
             try (Connection conn = DatabaseConnection.getConnection()) {
-                if (conn != null) {
-
-                    // Try with IsBlocked column first; fall back if column doesn't exist yet
-                    String query;
-                    boolean hasIsBlockedColumn = columnExists(conn, "Users", "IsBlocked");
-                    if (hasIsBlockedColumn) {
-                        query = "SELECT UserID, FullName, Role, PasswordHash, IsBlocked FROM Users WHERE Username = ?";
-                    } else {
-                        query = "SELECT UserID, FullName, Role, PasswordHash FROM Users WHERE Username = ?";
-                    }
-
-                    try (PreparedStatement pstmt = conn.prepareStatement(query)) {
-                        pstmt.setString(1, u);
-                        ResultSet rs = pstmt.executeQuery();
-
-                        if (rs.next()) {
-                            String dbPass = rs.getString("PasswordHash");
-
-                            // Hash the entered password before comparing
-                            String enteredHash = db.PasswordUtil.hashPassword(p);
-
-                            if (enteredHash.equals(dbPass)) {
-                                String dbRole     = rs.getString("Role");
-                                String dbFullName = rs.getString("FullName");
-                                int    dbId       = rs.getInt("UserID");
-                                boolean isBlocked = hasIsBlockedColumn && rs.getInt("IsBlocked") == 1;
-
-                                if (isBlocked) {
-                                    showAlert("Account Blocked",
-                                        "Your account has been blocked by the administrator.\n" +
-                                        "Please contact the library admin for assistance.");
-                                    return;
-                                }
-
-                                // Reset attempts on success
-                                loginAttempts = 0;
-                                Stage currentStage = (Stage) view.getScene().getWindow();
-                                currentStage.close();
-
-                                switch (dbRole.toLowerCase()) {
-                                    case "admin":
-                                        new AdminDashboard(dbFullName).show();
-                                        break;
-                                    case "librarian":
-                                        new LibrarianDashboard(dbFullName, dbId).show();
-                                        break;
-                                    default:
-                                        // Student and Guest both use StudentDashboard
-                                        new StudentDashboard(dbFullName, dbId).show();
-                                        break;
-                                }
-                                System.out.println("✅ Login Successful for: " + dbFullName + " [" + dbRole + "]");
-
-                            } else {
-                                // Wrong password
-                                loginAttempts++;
-                                if (loginAttempts >= MAX_ATTEMPTS) {
-                                    lockLoginButton(btnLogin, lblLockout, txtUser, txtPassHidden, txtPassShown);
-                                } else {
-                                    int remaining = MAX_ATTEMPTS - loginAttempts;
-                                    showAlert("Wrong Password",
-                                        "The password is incorrect.\n" +
-                                        "You have used " + loginAttempts + " of " + MAX_ATTEMPTS + " attempts.\n" +
-                                        remaining + " attempt(s) left before temporary lockout.");
-                                }
+                if (conn == null) { showAlert("Database Error", "Could not connect."); return; }
+                boolean hasBlocked = columnExists(conn, "Users", "IsBlocked");
+                String q = hasBlocked
+                    ? "SELECT UserID,FullName,Role,PasswordHash,IsBlocked FROM Users WHERE Username=?"
+                    : "SELECT UserID,FullName,Role,PasswordHash FROM Users WHERE Username=?";
+                try (PreparedStatement pst = conn.prepareStatement(q)) {
+                    pst.setString(1, u);
+                    ResultSet rs = pst.executeQuery();
+                    if (rs.next()) {
+                        if (db.PasswordUtil.hashPassword(p).equals(rs.getString("PasswordHash"))) {
+                            if (hasBlocked && rs.getInt("IsBlocked") == 1) {
+                                showAlert("Account Blocked",
+                                    "Your account has been blocked.\nContact the library admin.");
+                                return;
                             }
+                            loginAttempts = 0;
+                            String role = rs.getString("Role");
+                            String name = rs.getString("FullName");
+                            int    id   = rs.getInt("UserID");
+                            Stage  st   = (Stage) view.getScene().getWindow();
+                            st.close();
+                            switch (role.toLowerCase()) {
+                                case "admin"     -> new AdminDashboard(name, id).show();
+                                case "librarian" -> new LibrarianDashboard(name, id).show();
+                                default          -> new StudentDashboard(name, id).show();
+                            }
+                            db.ActivityLog.log(id, name + " logged in as " + role);
                         } else {
-                            // User not found
                             loginAttempts++;
-                            if (loginAttempts >= MAX_ATTEMPTS) {
+                            if (loginAttempts >= MAX_ATTEMPTS)
                                 lockLoginButton(btnLogin, lblLockout, txtUser, txtPassHidden, txtPassShown);
-                            } else {
-                                int remaining = MAX_ATTEMPTS - loginAttempts;
-                                showAlert("User Not Found",
-                                    "No account found for username '" + u + "'.\n" +
-                                    "You have used " + loginAttempts + " of " + MAX_ATTEMPTS + " attempts.\n" +
-                                    remaining + " attempt(s) left before temporary lockout.");
-                            }
+                            else
+                                showAlert("Wrong Password",
+                                    "Incorrect password. " + (MAX_ATTEMPTS - loginAttempts) + " attempt(s) left.");
                         }
+                    } else {
+                        loginAttempts++;
+                        if (loginAttempts >= MAX_ATTEMPTS)
+                            lockLoginButton(btnLogin, lblLockout, txtUser, txtPassHidden, txtPassShown);
+                        else
+                            showAlert("User Not Found",
+                                "No account for '" + u + "'. " + (MAX_ATTEMPTS - loginAttempts) + " attempt(s) left.");
                     }
-                } else {
-                    showAlert("Database Error", "Could not connect to the SQL Server database.");
                 }
             } catch (SQLException ex) {
-                ex.printStackTrace();
                 showAlert("System Error", "Database Error: " + ex.getMessage());
             }
         });
 
-        btnAdminDemo.setOnAction(e -> {
-            Stage currentStage = (Stage) view.getScene().getWindow();
-            if (currentStage != null) currentStage.close();
-            new AdminDashboard("System Admin Demo").show();
-        });
-
-        btnLibrarianDemo.setOnAction(e -> {
-            Stage currentStage = (Stage) view.getScene().getWindow();
-            if (currentStage != null) currentStage.close();
-            new LibrarianDashboard("Librarian Demo", 0).show();
-        });
-
-        btnStudentDemo.setOnAction(e -> {
-            Stage currentStage = (Stage) view.getScene().getWindow();
-            if (currentStage != null) currentStage.close();
-            new StudentDashboard("Student Demo", 1001).show();
-        });
-
-        // Add all elements to Card
-        loginCard.getChildren().addAll(bduLogoView, titleBox, txtUser, passwordPane, forgotBox, btnLogin, lblLockout, registerBox, lblOr, demoPanel);
-
-        // ==========================================
-        // Back to Landing Page Button
-        // ==========================================
-        Button btnBack = new Button("← Back");
-        btnBack.setFont(Font.font("Segoe UI", FontWeight.SEMI_BOLD, 13));
-        btnBack.setStyle(
-            "-fx-background-color: rgba(255,255,255,0.08);" +
-            "-fx-border-color: rgba(255,255,255,0.20);" +
-            "-fx-border-radius: 20; -fx-background-radius: 20;" +
-            "-fx-text-fill: #94a3b8; -fx-padding: 7 18; -fx-cursor: hand;"
-        );
-        btnBack.setOnMouseEntered(e -> btnBack.setStyle(
-            "-fx-background-color: rgba(56,189,248,0.15);" +
-            "-fx-border-color: #38bdf8;" +
-            "-fx-border-radius: 20; -fx-background-radius: 20;" +
-            "-fx-text-fill: #38bdf8; -fx-padding: 7 18; -fx-cursor: hand;"
-        ));
-        btnBack.setOnMouseExited(e -> btnBack.setStyle(
-            "-fx-background-color: rgba(255,255,255,0.08);" +
-            "-fx-border-color: rgba(255,255,255,0.20);" +
-            "-fx-border-radius: 20; -fx-background-radius: 20;" +
-            "-fx-text-fill: #94a3b8; -fx-padding: 7 18; -fx-cursor: hand;"
-        ));
-        btnBack.setOnAction(e -> {
-            if (view.getScene() != null) {
-                javafx.animation.FadeTransition fadeOut =
-                    new javafx.animation.FadeTransition(Duration.millis(400), view);
-                fadeOut.setFromValue(1.0);
-                fadeOut.setToValue(0.0);
-                fadeOut.setOnFinished(ev -> view.getScene().setRoot(new LandingPage().getView()));
-                fadeOut.play();
+        // ── ✕ Close button — inside card, top-right corner ───────────
+        Button btnClose = new Button("✕");
+        btnClose.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
+        String closeBase =
+            "-fx-background-color: rgba(239,68,68,0.85);" +
+            "-fx-border-color: #ef4444;" +
+            "-fx-border-radius: 50%; -fx-background-radius: 50%;" +
+            "-fx-text-fill: white;" +
+            "-fx-min-width: 30; -fx-min-height: 30;" +
+            "-fx-max-width: 30; -fx-max-height: 30;" +
+            "-fx-cursor: hand;";
+        String closeHover =
+            "-fx-background-color: #ef4444;" +
+            "-fx-border-color: #fca5a5;" +
+            "-fx-border-radius: 50%; -fx-background-radius: 50%;" +
+            "-fx-text-fill: white;" +
+            "-fx-min-width: 30; -fx-min-height: 30;" +
+            "-fx-max-width: 30; -fx-max-height: 30;" +
+            "-fx-cursor: hand;";
+        btnClose.setStyle(closeBase);
+        btnClose.setOnMouseEntered(e -> btnClose.setStyle(closeHover));
+        btnClose.setOnMouseExited(e  -> btnClose.setStyle(closeBase));
+        btnClose.setOnAction(e -> {
+            if (view.getParent() instanceof StackPane overlay
+                    && overlay.getParent() instanceof StackPane landingView) {
+                FadeTransition fo = new FadeTransition(Duration.millis(200), overlay);
+                fo.setFromValue(1); fo.setToValue(0);
+                fo.setOnFinished(ev -> landingView.getChildren().remove(overlay));
+                fo.play();
+            } else if (view.getScene() != null) {
+                FadeTransition fo = new FadeTransition(Duration.millis(300), view);
+                fo.setFromValue(1); fo.setToValue(0);
+                fo.setOnFinished(ev -> view.getScene().setRoot(new LandingPage().getView()));
+                fo.play();
             }
         });
 
-        StackPane.setAlignment(btnBack, Pos.TOP_LEFT);
-        StackPane.setMargin(btnBack, new Insets(18, 0, 0, 22));
+        // ✕ inside the card — positive inset keeps it inside the border
+        StackPane.setAlignment(btnClose, Pos.TOP_RIGHT);
+        StackPane.setMargin(btnClose, new Insets(12, 12, 0, 0));
 
-        // Fade Animation
-        FadeTransition ft = new FadeTransition(Duration.millis(1200), loginCard);
-        ft.setFromValue(0.0);
-        ft.setToValue(1.0);
-        ft.play();
+        StackPane cardWrapper = new StackPane(loginCard, btnClose);
+        cardWrapper.setMaxWidth(500);
 
-        // ── Layout: BorderPane keeps marquee at top, card centered ────
-        BorderPane layout = new BorderPane();
-        layout.setStyle("-fx-background-color: transparent;");
-        layout.setTop(marqueeBar);
-        layout.setCenter(loginCard);
-        BorderPane.setAlignment(loginCard, Pos.CENTER);
+        FadeTransition ft = new FadeTransition(Duration.millis(600), cardWrapper);
+        ft.setFromValue(0); ft.setToValue(1); ft.play();
 
-        view.getChildren().addAll(layout, btnBack);
-        StackPane.setAlignment(layout, Pos.TOP_LEFT);
-        StackPane.setAlignment(btnBack, Pos.TOP_LEFT);
+        // Card centred directly in the transparent view — landing page shows through
+        view.getChildren().add(cardWrapper);
+        StackPane.setAlignment(cardWrapper, Pos.CENTER);
     }
 
-    // 4. ለ Main Window ቪውውን አሳልፎ የሚሰጥ Method
-    public StackPane getView() {
-        return view;
-    }
+    public StackPane getView() { return view; }
 
     private void lockLoginButton(Button btnLogin, Label lblLockout,
                                   TextField txtUser, PasswordField txtPassHidden,
                                   TextField txtPassShown) {
-        final int LOCKOUT_SECONDS = 30;
+        final int SECS = 30;
         btnLogin.setDisable(true);
         txtUser.setDisable(true);
         txtPassHidden.setDisable(true);
         txtPassShown.setDisable(true);
         lblLockout.setVisible(true);
-
-        // Countdown using JavaFX Timeline
-        javafx.animation.Timeline countdown = new javafx.animation.Timeline();
-        final int[] secondsLeft = {LOCKOUT_SECONDS};
-
-        countdown.getKeyFrames().add(new javafx.animation.KeyFrame(
-            Duration.seconds(1),
-            event -> {
-                secondsLeft[0]--;
-                if (secondsLeft[0] > 0) {
-                    lblLockout.setText("🔒 Too many failed attempts. Try again in " + secondsLeft[0] + "s");
+        final int[] left = {SECS};
+        javafx.animation.Timeline cd = new javafx.animation.Timeline(
+            new javafx.animation.KeyFrame(Duration.seconds(1), ev -> {
+                left[0]--;
+                if (left[0] > 0) {
+                    lblLockout.setText("🔒 Too many attempts. Try again in " + left[0] + "s");
                 } else {
-                    // Reset everything
                     loginAttempts = 0;
                     btnLogin.setDisable(false);
                     txtUser.setDisable(false);
@@ -456,44 +311,23 @@ public class LoginForm {
                     txtPassShown.setDisable(false);
                     lblLockout.setVisible(false);
                     lblLockout.setText("");
-                    txtUser.clear();
-                    txtPassHidden.clear();
-                    countdown.stop();
+                    txtUser.clear(); txtPassHidden.clear();
                 }
-            }
-        ));
-        countdown.setCycleCount(LOCKOUT_SECONDS);
-        lblLockout.setText("🔒 Too many failed attempts. Try again in " + LOCKOUT_SECONDS + "s");
-        countdown.play();
+            })
+        );
+        cd.setCycleCount(SECS);
+        lblLockout.setText("🔒 Too many attempts. Try again in " + SECS + "s");
+        cd.play();
     }
 
-    private boolean columnExists(Connection conn, String table, String column) {
-        try {
-            java.sql.DatabaseMetaData meta = conn.getMetaData();
-            try (ResultSet rs = meta.getColumns(null, null, table, column)) {
-                return rs.next();
-            }
-        } catch (SQLException e) {
-            return false;
-        }
+    private boolean columnExists(Connection conn, String table, String col) {
+        try (ResultSet rs = conn.getMetaData().getColumns(null, null, table, col)) {
+            return rs.next();
+        } catch (SQLException e) { return false; }
     }
 
-    private Button createDemoButton(String text, String color) {
-        Button btn = new Button(text);
-        btn.setStyle("-fx-background-color: transparent; -fx-border-color: " + color + "; -fx-text-fill: " + color + "; -fx-border-radius: 20; -fx-background-radius: 20; -fx-cursor: hand; -fx-font-size: 12px;");
-        btn.setPrefHeight(32);
-        btn.setPrefWidth(100);
-
-        btn.setOnMouseEntered(e -> btn.setStyle("-fx-background-color: " + color + "; -fx-text-fill: #0f172a; -fx-border-radius: 20; -fx-background-radius: 20; -fx-cursor: hand; -fx-font-size: 12px; -fx-font-weight: bold;"));
-        btn.setOnMouseExited(e -> btn.setStyle("-fx-background-color: transparent; -fx-border-color: " + color + "; -fx-text-fill: " + color + "; -fx-border-radius: 20; -fx-background-radius: 20; -fx-cursor: hand; -fx-font-size: 12px;"));
-        return btn;
-    }
-
-    private void showAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message);
-        alert.showAndWait();
+    private void showAlert(String title, String msg) {
+        Alert a = new Alert(Alert.AlertType.ERROR);
+        a.setTitle(title); a.setHeaderText(null); a.setContentText(msg); a.showAndWait();
     }
 }

@@ -29,6 +29,14 @@ public class ReturnBook {
     private Label lblDaysInfo;
     private TableView<BorrowRecord> borrowedTable;
 
+    /** Optional callback fired after a successful return — used to refresh the parent dashboard. */
+    private Runnable onReturnSuccess;
+
+    /** Set a callback to be called after a book is successfully returned. */
+    public void setOnReturnSuccess(Runnable callback) {
+        this.onReturnSuccess = callback;
+    }
+
     private Pagination pagination;
     private ObservableList<BorrowRecord> masterData = FXCollections.observableArrayList();
     private FilteredList<BorrowRecord> filteredData;
@@ -89,7 +97,7 @@ public class ReturnBook {
 
         lblPenaltyDisplay = new Label("0.00 ETB");
         lblPenaltyDisplay.setFont(Font.font("Segoe UI", FontWeight.BOLD, 28));
-        lblPenaltyDisplay.setTextFill(Color.web("#27ae60"));
+        lblPenaltyDisplay.setTextFill(Color.web("#1e293b"));
         lblDaysInfo = new Label("No record selected");
 
         penaltyCard.getChildren().addAll(new Label("Calculated Penalty:"), lblPenaltyDisplay, lblDaysInfo);
@@ -122,12 +130,12 @@ public class ReturnBook {
 
         Label lblRows = new Label("Rows per page:");
         cmbPageSize = new ComboBox<>(FXCollections.observableArrayList(5, 10, 20, 50));
-        cmbPageSize.setValue(10);
+        cmbPageSize.setValue(5);
         cmbPageSize.setStyle("-fx-background-color: white; -fx-border-color: #bdc3c7; -fx-border-radius: 5;");
         cmbPageSize.setOnAction(e -> updatePagination());
 
         Button btnExport = new Button("📊 Export List");
-        btnExport.setStyle("-fx-background-color: #27ae60; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;");
+        btnExport.setStyle("-fx-background-color: #3b82f6; -fx-text-fill: white; -fx-background-radius: 5; -fx-cursor: hand;");
         btnExport.setPrefHeight(40);
         btnExport.setOnAction(e -> exportBorrowedBooks());
 
@@ -237,7 +245,7 @@ public class ReturnBook {
             } else {
                 currentPenalty = 0.0;
                 lblPenaltyDisplay.setText("0.00 ETB");
-                lblPenaltyDisplay.setTextFill(Color.web("#27ae60"));
+                lblPenaltyDisplay.setTextFill(Color.web("#1e293b"));
                 lblDaysInfo.setText("✅ On time return");
             }
         } catch (Exception ex) {
@@ -270,11 +278,13 @@ public class ReturnBook {
                 loadBorrowedBooks();
                 txtRecordID.clear();
                 lblPenaltyDisplay.setText("0.00 ETB");
-                lblPenaltyDisplay.setTextFill(Color.web("#27ae60"));
+                lblPenaltyDisplay.setTextFill(Color.web("#1e293b"));
                 lblDaysInfo.setText("No record selected");
                 currentPenalty = 0.0;
                 selectedRecord = null;
                 borrowedTable.getSelectionModel().clearSelection();
+                // Notify parent dashboard to refresh KPIs
+                if (onReturnSuccess != null) onReturnSuccess.run();
             }
         }
     }

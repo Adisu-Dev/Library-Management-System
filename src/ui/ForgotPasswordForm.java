@@ -36,11 +36,14 @@ public class ForgotPasswordForm {
 
         // Background
         try {
-            Image bg = new Image("file:src/images/bdu_bg.jpg");
-            view.setBackground(new Background(new BackgroundImage(bg,
-                BackgroundRepeat.NO_REPEAT, BackgroundRepeat.NO_REPEAT,
-                BackgroundPosition.CENTER,
-                new BackgroundSize(BackgroundSize.AUTO, BackgroundSize.AUTO, false, false, false, true))));
+            java.io.InputStream bgStream = getClass().getResourceAsStream("/images/bdu_bg.jpg");
+            if (bgStream != null) {
+                Image bg = new Image(bgStream);
+                view.setBackground(new Background(new BackgroundImage(bg,
+                    BackgroundRepeat.NO_REPEAT, BackgroundRepeat.NO_REPEAT,
+                    BackgroundPosition.CENTER,
+                    new BackgroundSize(BackgroundSize.AUTO, BackgroundSize.AUTO, false, false, false, true))));
+            } else { view.setStyle("-fx-background-color: #020617;"); }
         } catch (Exception ignored) {
             view.setStyle("-fx-background-color: #020617;");
         }
